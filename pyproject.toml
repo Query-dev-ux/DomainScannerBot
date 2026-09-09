@@ -1,0 +1,49 @@
+[project]
+name = "domain-scanner-bot"
+version = "0.1.0"
+description = "Telegram bot for monitoring domain reputation and detecting threats/flags in security services"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.13,<4",
+    "aiohttp>=3.10",
+    "apscheduler>=3.10,<4",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "tenacity>=9.0",
+    "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+# RUF001-003: Cyrillic letters in user-facing Russian strings are intentional.
+# UP042: models keep the `str` mixin for SQLAlchemy Enum compatibility.
+ignore = ["RUF001", "RUF002", "RUF003", "UP042"]
+
+[tool.ruff.lint.per-file-ignores]
+"migrations/*" = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
