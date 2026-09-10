@@ -1,0 +1,32 @@
+# Override for hosts that already run a PostgreSQL you want to reuse instead of
+# starting a dedicated `db` container.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.external-db.yml up -d --build
+#
+# In .env set POSTGRES_HOST / POSTGRES_PORT / POSTGRES_USER / POSTGRES_PASSWORD /
+# POSTGRES_DB to point at the existing server, and create the database + user there
+# beforehand:
+#   CREATE USER domain_scanner WITH PASSWORD '...';
+#   CREATE DATABASE domain_scanner OWNER domain_scanner;
+
+services:
+  db:
+    # Disable the bundled Postgres — it is replaced by the external one.
+    profiles: ["never"]
+
+  migrate:
+    depends_on: !reset []
+    # If the existing Postgres runs in another compose stack, attach to its network:
+    # networks: [default, shared-db]
+
+  bot:
+    depends_on: !override
+      migrate:
+        condition: service_completed_successfully
+    # networks: [default, shared-db]
+
+# networks:
+#   shared-db:
+#     external: true
+#     name: <name of the other stack's network, e.g. otherapp_default>

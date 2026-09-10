@@ -57,6 +57,9 @@ docker compose up -d --build
 
 `docker compose` поднимает Postgres, прогоняет миграции (`migrate`) и запускает `bot`.
 
+Развёртывание на сервере (в т.ч. рядом с другими контейнерами, переиспользование
+существующего Postgres, бэкапы, обновление) — [DEPLOY.md](DEPLOY.md).
+
 ### Локально без Docker
 
 ```bash

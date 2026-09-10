@@ -1,3 +1,7 @@
+# Compose project name: keeps containers / network / volume namespaced
+# (domain-scanner-bot_*) so nothing collides with other stacks on the host.
+name: domain-scanner-bot
+
 services:
   db:
     image: postgres:16-alpine
