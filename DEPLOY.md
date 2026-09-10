@@ -26,11 +26,15 @@
 ## 1. Забрать код в отдельную директорию
 
 ```bash
-sudo mkdir -p /opt/domain-scanner-bot
-sudo chown "$USER" /opt/domain-scanner-bot
-git clone https://github.com/Query-dev-ux/DomainScannerBot.git /opt/domain-scanner-bot
-cd /opt/domain-scanner-bot
+sudo mkdir -p /opt/DomainScannerBot
+sudo chown "$USER" /opt/DomainScannerBot
+git clone https://github.com/Query-dev-ux/DomainScannerBot.git /opt/DomainScannerBot
+cd /opt/DomainScannerBot
 ```
+
+> Имя папки может быть любым (`DomainScannerBot`, `/srv/...` и т.п.) — на имена
+> контейнеров, сети и тома оно **не влияет**: они привязаны к `name:
+> domain-scanner-bot` из `docker-compose.yml`, а не к директории.
 
 ## 2. Заполнить `.env`
 
@@ -84,7 +88,7 @@ docker compose run --rm migrate alembic current
 ## 5. Обновление версии
 
 ```bash
-cd /opt/domain-scanner-bot
+cd /opt/DomainScannerBot
 git pull
 docker compose up -d --build      # migrate прогонится автоматически заново
 docker image prune -f             # убрать старые слои
