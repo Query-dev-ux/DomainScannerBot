@@ -20,7 +20,7 @@
 
 - Docker Engine 24+ и плагин Compose v2 (`docker compose version`)
 - Исходящий HTTPS к `api.telegram.org`, `openapi.pwa.partners`,
-  `safebrowsing.googleapis.com`, `www.virustotal.com`
+  `safebrowsing.googleapis.com`, `graph.facebook.com`
 - ~300 МБ RAM и немного диска под Postgres
 
 ## 1. Забрать код в отдельную директорию
@@ -52,6 +52,7 @@ nano .env
 | `ADMIN_IDS` | ваши Telegram user id через запятую |
 | `PWA_API_KEY`, `PWA_TEAM_UUID` | доступ к PWA.partners Open API |
 | `GSB_API_KEY` | ключ Google Safe Browsing (можно оставить пустым — чекер отключится) |
+| `FB_APP_ID`, `FB_APP_SECRET` | проверка блокировки домена в Facebook (см. ниже; пусто — чекер отключится) |
 | `POSTGRES_PASSWORD` | придумать надёжный пароль |
 
 `POSTGRES_HOST=db` и `POSTGRES_PORT=5432` менять не нужно — это адрес контейнера
@@ -59,6 +60,21 @@ nano .env
 
 > Бот добавит себя в группу как обычного участника. Дайте ему право писать
 > сообщения; права администратора не требуются.
+
+### Где взять `FB_APP_ID` / `FB_APP_SECRET`
+
+Нужны, чтобы чекер `facebook` мог спрашивать Graph API, не заблокирована ли ссылка.
+Приложение служебное — ревью Meta и публикация не требуются, работает в режиме
+разработки.
+
+1. https://developers.facebook.com/apps → **Create app**.
+2. Тип — **Other** → **Business** (или любой без обязательных продуктов).
+3. **App settings → Basic**: скопировать **App ID** и **App Secret** (кнопка *Show*).
+4. Вписать в `.env` как `FB_APP_ID` / `FB_APP_SECRET`.
+
+Бот складывает их в app access token вида `{app_id}|{app_secret}` — вход под
+пользователем и никакие permissions не нужны. Секрет даёт полный доступ к
+приложению, так что держите `.env` с правами `600` и не коммитьте.
 
 ## 3. Собрать и запустить
 
@@ -172,7 +188,7 @@ services:
     dns: ["<ip рекурсивного резолвера>"]
 ```
 
-GSB и VirusTotal от резолвера не зависят.
+GSB и Facebook от резолвера не зависят.
 
 ### Автозапуск после перезагрузки
 

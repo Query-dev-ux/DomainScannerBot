@@ -28,7 +28,9 @@ class Settings(BaseSettings):
 
     # Checkers
     gsb_api_key: str | None = None
-    virustotal_api_key: str | None = None
+    # Facebook app credentials; both are needed to build the app access token.
+    fb_app_id: str | None = None
+    fb_app_secret: str | None = None
 
     # Database
     postgres_host: str = "db"

@@ -7,7 +7,7 @@ API PWA.partners, проверяет их в security-сервисах, хран
 ## Как это работает
 
 ```
-PWA.partners Open API ──sync──▶  PostgreSQL  ◀──scan── Checkers (GSB, VirusTotal, DNSBL)
+PWA.partners Open API ──sync──▶  PostgreSQL  ◀──scan── Checkers (DNSBL, GSB, Facebook)
                                      │
                                      ▼
                           APScheduler (внутри бота)
@@ -29,8 +29,8 @@ PWA.partners Open API ──sync──▶  PostgreSQL  ◀──scan── Check
 | Вердикт | Значение |
 |---|---|
 | `clean` | чисто во всех проверках |
-| `suspicious` | домен не резолвится или единичные срабатывания |
-| `flagged` | найден в блоклистах / GSB / много детектов VirusTotal |
+| `suspicious` | домен не резолвится, или краулер FB не смог прочитать страницу |
+| `flagged` | найден в блоклистах / GSB / заблокирован в Facebook |
 | `error` | все проверки завершились ошибкой |
 
 ## Проверки (checkers)
@@ -39,11 +39,25 @@ PWA.partners Open API ──sync──▶  PostgreSQL  ◀──scan── Check
 |---|---|---|
 | `dns_rbl` | не нужен | резолв домена + Spamhaus DBL / SURBL |
 | `google_safe_browsing` | `GSB_API_KEY` | malware / phishing / unwanted software |
-| `virustotal` | `VIRUSTOTAL_API_KEY` | агрегированная репутация (~90 движков) |
+| `facebook` | `FB_APP_ID` + `FB_APP_SECRET` | блокировка ссылки внутри Facebook |
 
-> ⚠️ Google Safe Browsing показывает только явный вредоносный контент. Он **не**
-> отражает блокировку домена внутри Facebook. Для трафика с FB это отдельный
-> сигнал — см. `docs/roadmap.md`.
+### Как работает проверка Facebook
+
+Официального API «заблокирован ли домен» нет. Чекер использует **Graph API URL node**
+(`GET /v21.0/?id=https://<домен>/&fields=og_object,engagement`) — тот же запрос, на
+котором построен [Sharing Debugger](https://developers.facebook.com/tools/debug/).
+Аутентификация — app access token (`{app_id}|{app_secret}`), логин пользователя не нужен.
+
+| Ответ Graph API | Вердикт |
+|---|---|
+| объект отдался (`id` + `og_object`) | `clean` |
+| ошибка с маркером блокировки (`Community Standards`, `not allowed`, `unsafe`…) | `flagged` |
+| краулер не смог прочитать страницу (`no data was scraped`…) | `suspicious` |
+| transient / rate limit / незнакомая ошибка | `error` (алерт не шлётся) |
+
+Полный ответ Graph API всегда сохраняется в `scan_checks.raw` — по накопленным данным
+списки маркеров в [checkers/facebook.py](src/domain_scanner/checkers/facebook.py)
+можно уточнять. Незнакомые ошибки пишутся в лог как `facebook.unknown_error`.
 
 Новый checker = класс с атрибутом `name` и методом `async def check(domain) -> CheckOutcome`,
 добавленный в `build_checkers()` (`src/domain_scanner/checkers/__init__.py`).
