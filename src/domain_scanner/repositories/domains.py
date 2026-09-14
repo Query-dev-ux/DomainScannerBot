@@ -32,18 +32,30 @@ class DomainRepository:
         )
         return (await self._session.scalars(stmt)).all()
 
-    async def list_due_for_scan(self, older_than: timedelta) -> Sequence[Domain]:
+    def _due_filter(self, older_than: timedelta):
         cutoff = datetime.now(UTC) - older_than
+        return (
+            Domain.monitoring_enabled.is_(True),
+            Domain.is_active.is_(True),
+            or_(Domain.last_scanned_at.is_(None), Domain.last_scanned_at < cutoff),
+        )
+
+    async def list_due_for_scan(
+        self, older_than: timedelta, limit: int | None = None
+    ) -> Sequence[Domain]:
+        """Domains that need a scan, never-scanned and stalest first."""
         stmt = (
             select(Domain)
-            .where(
-                Domain.monitoring_enabled.is_(True),
-                Domain.is_active.is_(True),
-                or_(Domain.last_scanned_at.is_(None), Domain.last_scanned_at < cutoff),
-            )
+            .where(*self._due_filter(older_than))
             .order_by(Domain.last_scanned_at.asc().nulls_first())
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return (await self._session.scalars(stmt)).all()
+
+    async def count_due_for_scan(self, older_than: timedelta) -> int:
+        stmt = select(func.count()).select_from(Domain).where(*self._due_filter(older_than))
+        return int(await self._session.scalar(stmt) or 0)
 
     async def add_manual(self, name: str) -> tuple[Domain, bool]:
         name = name.strip().lower()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from domain_scanner.checkers.base import Checker, CheckOutcome
 from domain_scanner.db import session_scope
@@ -118,10 +118,18 @@ class ScannerService:
         return [r for r in results if r is not None]
 
 
-async def collect_due_domain_ids(older_than_minutes: int) -> list[int]:
-    from datetime import timedelta
-
+async def collect_due_domain_ids(
+    older_than_minutes: int, limit: int | None = None
+) -> list[int]:
     async with session_scope() as session:
         repo = DomainRepository(session)
-        domains = await repo.list_due_for_scan(timedelta(minutes=older_than_minutes))
+        domains = await repo.list_due_for_scan(
+            timedelta(minutes=older_than_minutes), limit=limit
+        )
         return [d.id for d in domains]
+
+
+async def count_due_domains(older_than_minutes: int) -> int:
+    async with session_scope() as session:
+        repo = DomainRepository(session)
+        return await repo.count_due_for_scan(timedelta(minutes=older_than_minutes))

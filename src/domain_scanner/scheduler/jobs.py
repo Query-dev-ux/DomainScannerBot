@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from domain_scanner.logging import get_logger
-from domain_scanner.services.scanner import collect_due_domain_ids
+from domain_scanner.services.scanner import collect_due_domain_ids, count_due_domains
 
 if TYPE_CHECKING:
     from domain_scanner.app import Application
@@ -14,6 +15,15 @@ log = get_logger(__name__)
 
 SYNC_JOB_ID = "pwa-domain-sync"
 SCAN_JOB_ID = "reputation-scan"
+
+# Delay before the first run after boot: sync first so the scan has domains to
+# work with, rather than waiting a full interval on a fresh deploy.
+FIRST_SYNC_DELAY = timedelta(seconds=30)
+FIRST_SCAN_DELAY = timedelta(seconds=120)
+
+# If the bot was down when a run was due, still run it when it comes back — as
+# long as we are not more than this far past the scheduled time.
+MISFIRE_GRACE_SECONDS = 600
 
 
 async def run_sync(app: Application) -> None:
@@ -26,9 +36,11 @@ async def run_sync(app: Application) -> None:
 
 
 async def run_scan(app: Application) -> None:
-    log.info("job.scan.start")
+    batch_size = app.settings.scan_batch_size
+    interval = app.settings.scan_interval_minutes
+    log.info("job.scan.start", batch_size=batch_size)
     try:
-        domain_ids = await collect_due_domain_ids(app.settings.scan_interval_minutes)
+        domain_ids = await collect_due_domain_ids(interval, limit=batch_size)
         if not domain_ids:
             log.info("job.scan.nothing_due")
             return
@@ -36,31 +48,53 @@ async def run_scan(app: Application) -> None:
         alerts = [r for r in reports if r.needs_alert]
         for report in alerts:
             await app.notifier.notify_scan(report)
-        log.info("job.scan.done", scanned=len(reports), alerts=len(alerts))
+        remaining = await count_due_domains(interval)
+        log.info(
+            "job.scan.done", scanned=len(reports), alerts=len(alerts), remaining=remaining
+        )
     except Exception:
         log.exception("job.scan.error")
         await app.notifier.notify_text("🛑 Плановое сканирование доменов упало. См. логи.")
 
 
+def scan_tick_minutes(scan_interval_minutes: int) -> int:
+    """How often the scan job wakes up.
+
+    Runs more often than the per-domain interval so domains become due in a
+    rolling fashion instead of all at once, and so a batched backlog drains
+    within one interval.
+    """
+    return max(1, scan_interval_minutes // 3)
+
+
 def register_jobs(scheduler: AsyncIOScheduler, app: Application) -> None:
     settings = app.settings
+    now = datetime.now(UTC)
+
     scheduler.add_job(
         run_sync,
         "interval",
         minutes=settings.sync_interval_minutes,
         id=SYNC_JOB_ID,
+        name="Синхронизация доменов из PWA API",
         args=[app],
         max_instances=1,
         coalesce=True,
-        next_run_time=None,
+        misfire_grace_time=MISFIRE_GRACE_SECONDS,
+        next_run_time=now + FIRST_SYNC_DELAY,
     )
     scheduler.add_job(
         run_scan,
         "interval",
-        minutes=max(1, settings.scan_interval_minutes // 3),
+        minutes=scan_tick_minutes(settings.scan_interval_minutes),
         id=SCAN_JOB_ID,
+        name="Проверка репутации доменов",
         args=[app],
         max_instances=1,
         coalesce=True,
-        next_run_time=None,
+        misfire_grace_time=MISFIRE_GRACE_SECONDS,
+        next_run_time=now + FIRST_SCAN_DELAY,
     )
+
+    for job in scheduler.get_jobs():
+        log.info("job.registered", job_id=job.id, next_run_time=str(job.next_run_time))

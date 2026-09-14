@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import re
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from aiogram import Router
@@ -153,18 +154,70 @@ async def cmd_sync_now(message: Message, app: Application) -> None:
 
 
 @router.message(Command("scan_now"))
-async def cmd_scan_now(message: Message, app: Application) -> None:
-    from domain_scanner.services.scanner import collect_due_domain_ids
+async def cmd_scan_now(message: Message, command: CommandObject, app: Application) -> None:
+    from domain_scanner.services.scanner import collect_due_domain_ids, count_due_domains
 
-    ids = await collect_due_domain_ids(app.settings.scan_interval_minutes)
-    if not ids:
+    interval = app.settings.scan_interval_minutes
+    limit = app.settings.scan_batch_size
+    arg = (command.args or "").strip()
+    if arg:
+        if not arg.isdigit() or int(arg) < 1:
+            await message.answer("Использование: /scan_now [сколько доменов]")
+            return
+        limit = int(arg)
+
+    total_due = await count_due_domains(interval)
+    if not total_due:
         await message.answer("Нет доменов, готовых к проверке.")
         return
-    await message.answer(f"🔍 Сканирую {len(ids)} доменов…")
+
+    ids = await collect_due_domain_ids(interval, limit=limit)
+    tail = f" (всего в очереди {total_due})" if total_due > len(ids) else ""
+    await message.answer(f"🔍 Сканирую {len(ids)} доменов{tail}…")
+
     reports = await app.scanner.scan_many(ids)
     alerts = [r for r in reports if r.needs_alert]
     for report in alerts:
         await app.notifier.notify_scan(report)
-    await message.answer(
+
+    remaining = await count_due_domains(interval)
+    lines = [
         f"✅ Просканировано: {len(reports)}. Изменений со статусом «алерт»: {len(alerts)}."
-    )
+    ]
+    if remaining:
+        lines.append(
+            f"Осталось в очереди: {remaining} — доберёт планировщик, "
+            f"либо запусти <code>/scan_now {remaining}</code>."
+        )
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("jobs"))
+async def cmd_jobs(message: Message, app: Application) -> None:
+    from domain_scanner.services.scanner import count_due_domains
+
+    jobs = app.scheduler.get_jobs()
+    if not jobs:
+        await message.answer("🛑 Планировщик не зарегистрировал ни одной задачи.")
+        return
+
+    now = datetime.now(UTC)
+    lines = ["<b>Автоматический режим</b>", ""]
+    for job in jobs:
+        nxt = job.next_run_time
+        if nxt is None:
+            when = "⏸ на паузе"
+        else:
+            mins = max(0, round((nxt - now).total_seconds() / 60))
+            when = f"через ~{mins} мин ({nxt:%H:%M} UTC)"
+        lines.append(f"• <b>{_e(job.name or job.id)}</b>\n  {when}")
+
+    due = await count_due_domains(app.settings.scan_interval_minutes)
+    lines += [
+        "",
+        f"Синхронизация раз в {app.settings.sync_interval_minutes} мин.",
+        f"Домен перепроверяется не чаще раза в {app.settings.scan_interval_minutes} мин, "
+        f"до {app.settings.scan_batch_size} шт. за прогон.",
+        f"Сейчас в очереди на проверку: <b>{due}</b>.",
+    ]
+    await message.answer("\n".join(lines))

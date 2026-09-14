@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     sync_interval_minutes: int = 60
     scan_interval_minutes: int = 180
     scan_concurrency: int = 5
+    # Max domains one scheduled scan run handles, so a large backlog is drained
+    # over several runs instead of bursting into external API rate limits.
+    scan_batch_size: int = 50
 
     log_level: str = "INFO"
 
