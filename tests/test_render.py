@@ -50,15 +50,15 @@ def _every_message() -> list[str]:
         muted=2,
     )
     sync = [
-        SyncResult(DomainSource.PWA, "PWA.partners", fetched=5, removed=1, foreign=1),
+        SyncResult(DomainSource.PWA, "PWApartners", fetched=5, removed=1, foreign=1),
         SyncResult(DomainSource.SKAKAPP, "SkakApp", error="HTTP 401"),
     ]
     jobs = [render.JobInfo("Проверка", 60, WHEN + timedelta(minutes=5))]
     return [
         render.render_help(),
-        render.render_startup(["PWA.partners", "SkakApp"], ["dns_rbl"], 60, 180),
-        render.render_report(_report(), MSK, alert=True),
-        render.render_report(_report(changed=False), MSK),
+        render.render_startup(["PWApartners", "SkakApp"], ["dns_rbl"]),
+        render.render_report(_report(), alert=True),
+        render.render_report(_report(changed=False)),
         render.render_checking("a.com"),
         render.render_status(stats),
         render.render_status(DomainStats()),
@@ -68,8 +68,8 @@ def _every_message() -> list[str]:
         render.render_sync([]),
         render.render_sync_failure(sync),
         render.render_job_crash("Синхронизация"),
-        render.render_scan_started(5, 10),
-        render.render_scan_done([_report()], remaining=4),
+        render.render_scan_started(5),
+        render.render_scan_done([_report()]),
     ]
 
 
@@ -93,35 +93,41 @@ def test_no_on_off_vocabulary(text: str):
 
 
 def test_alert_card_layout():
-    text = render.render_report(_report(), MSK, alert=True)
+    text = render.render_report(_report(), alert=True)
     lines = text.split("\n")
     assert lines[0] == "<b>Домен зашкварен</b>"
     assert lines[1] == "<code>wintonic.living</code>"
     assert lines[2] == "<i>SkakApp · было: чисто</i>"
     assert "<b>DNS-блоклисты</b> — в блоклистах: SURBL" in text  # problem is bold
-    assert "\nGoogle Safe Browsing — нет совпадений" in text  # clean stays plain
-    assert lines[-1] == "<i>18.09, 12:40 MSK</i>"
+    assert lines[-1] == "Google Safe Browsing — нет совпадений"  # clean stays plain
+    assert "MSK" not in text and "18.09" not in text  # Telegram shows the time itself
+
+
+def test_no_previous_state_when_domain_was_never_checked():
+    text = render.render_report(_report(previous_verdict=Verdict.UNKNOWN), alert=True)
+    assert "было" not in text
+    assert text.split("\n")[2] == "<i>SkakApp</i>"
 
 
 def test_unchanged_check_card_omits_previous_state():
-    text = render.render_report(_report(changed=False, previous_verdict=Verdict.FLAGGED), UTC)
+    text = render.render_report(_report(changed=False, previous_verdict=Verdict.FLAGGED))
     assert "было:" not in text
 
 
 def test_untrusted_text_is_escaped():
     evil = CheckOutcome("facebook", Verdict.ERROR, error="<script>alert(1)</script>")
-    text = render.render_report(_report(domain="a<b>.com", outcomes=[evil]), UTC)
+    text = render.render_report(_report(domain="a<b>.com", outcomes=[evil]))
     assert "<script>" not in text and "&lt;script&gt;" in text
     assert "a&lt;b&gt;.com" in text
 
 
 def test_long_details_are_clipped():
     long = CheckOutcome("facebook", Verdict.ERROR, error="x" * 1000)
-    text = render.render_report(_report(outcomes=[long]), UTC)
+    text = render.render_report(_report(outcomes=[long]))
     assert "x" * 1000 not in text and "…" in text
 
 
-def test_status_shows_only_nonzero_verdicts_share_and_sources():
+def test_status_is_just_the_count_and_verdicts():
     stats = DomainStats(
         by_verdict={Verdict.CLEAN: 9, Verdict.FLAGGED: 1},
         by_source={DomainSource.PWA: 6, DomainSource.SKAKAPP: 4},
@@ -131,9 +137,8 @@ def test_status_shows_only_nonzero_verdicts_share_and_sources():
     assert "10 доменов" in text
     assert "Зашкварен — 1" in text and "Чисто — 9" in text
     assert "Подозрительно" not in text  # zero rows are hidden
-    assert "Чистых — 90%" in text
-    assert "PWA.partners 6 · SkakApp 4" in text
-    assert "Не отслеживается — 2" in text
+    for extra in ("%", "PWApartners", "SkakApp", "отслежива"):
+        assert extra not in text
 
 
 def test_status_empty_db_points_to_sync():
@@ -147,14 +152,14 @@ def test_domain_count_plural(n: int, word: str):
     assert render._domains(n) == f"{n} {word}"
 
 
-def test_list_groups_worst_first_and_marks_muted():
+def test_list_groups_worst_first():
     domains = [
         _domain("ok.com"),
         _domain("bad.com", Verdict.FLAGGED, source=DomainSource.SKAKAPP, monitoring_enabled=False),
     ]
     text = render.render_list(domains, "Все домены", empty_hint="—")
     assert text.index("bad.com") < text.index("ok.com")
-    assert "SkakApp · не отслеживается" in text
+    assert "отслежива" not in text
 
 
 def test_list_is_capped():
@@ -172,15 +177,16 @@ def test_long_list_fits_telegram_limit():
 
 def test_sync_card_reports_each_source():
     results = [
-        SyncResult(DomainSource.PWA, "PWA.partners", fetched=299, updated=299),
+        SyncResult(DomainSource.PWA, "PWApartners", fetched=299, updated=299),
         SyncResult(DomainSource.SKAKAPP, "SkakApp", error="SourceError: HTTP 401"),
     ]
     text = render.render_sync(results)
-    assert "<b>PWA.partners</b> — 299 доменов" in text
-    assert "удалено из источника 0" in text
+    assert "<b>PWApartners</b> — 299 доменов" in text
+    for extra in ("новых", "обновлено", "удалено", "другом источнике"):
+        assert extra not in text
     assert "<b>SkakApp</b> — ошибка" in text
     failure = render.render_sync_failure(results)
-    assert "SkakApp" in failure and "PWA.partners" not in failure
+    assert "SkakApp" in failure and "PWApartners" not in failure
 
 
 def test_jobs_card_shows_local_time_and_queue():

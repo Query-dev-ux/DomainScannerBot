@@ -2,7 +2,7 @@
 
 ## v0.1 (сделано)
 - [x] Каркас: config, БД (SQLAlchemy async + Alembic), Docker Compose
-- [x] Источник PWA.partners Open API (`/dash_api/domains/list`)
+- [x] Источник PWApartners Open API (`/dash_api/domains/list`)
 - [x] Синхронизация доменов в БД + деактивация пропавших
 - [x] Фреймворк проверок + checkers: `dns_rbl`, `google_safe_browsing`
 - [x] Планировщик (APScheduler) внутри бота — батчинг по `SCAN_BATCH_SIZE`,

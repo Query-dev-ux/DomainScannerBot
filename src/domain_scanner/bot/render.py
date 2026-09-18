@@ -51,10 +51,6 @@ def fmt_time(moment: datetime, tz: tzinfo) -> str:
     return f"{local:%d.%m, %H:%M} {local.tzname()}"
 
 
-def _pct(part: int, total: int) -> int:
-    return round(100 * part / total) if total else 0
-
-
 # ── Help / startup ────────────────────────────────────────────────────────────
 
 BOT_COMMANDS: tuple[tuple[str, str], ...] = (
@@ -83,20 +79,13 @@ def render_help() -> str:
     )
 
 
-def render_startup(
-    sources: Sequence[str],
-    checkers: Sequence[str],
-    sync_interval: int,
-    scan_interval: int,
-) -> str:
+def render_startup(sources: Sequence[str], checkers: Sequence[str]) -> str:
     src = ", ".join(sources) if sources else "не подключены — проверьте .env"
     chk = ", ".join(checker_label(c) for c in checkers)
     return (
         "<b>DomainScannerBot запущен</b>\n\n"
         f"Источники: {_e(src)}\n"
-        f"Проверки: {_e(chk)}\n"
-        f"<i>Синхронизация раз в {sync_interval} мин, "
-        f"перепроверка раз в {scan_interval} мин</i>"
+        f"Проверки: {_e(chk)}"
     )
 
 
@@ -111,15 +100,16 @@ def _outcome_line(o: CheckOutcome) -> str:
     return f"{name} — {_e(_clip(o.summary or o.error or '—'))}"
 
 
-def render_report(report: ScanReport, tz: tzinfo, *, alert: bool = False) -> str:
+def render_report(report: ScanReport, *, alert: bool = False) -> str:
     """Card for one scanned domain.
 
-    `alert=True` is the group notification: it always shows the previous state,
-    since the change is the whole point.
+    Shows the previous state only when the domain had a real one and it changed —
+    "было: не проверен" says nothing. No timestamp: Telegram shows the message time.
     """
     meta = [_e(source_label(report.source))]
-    if alert or report.changed:
-        meta.append(f"было: {VERDICT_RU[report.previous_verdict]}")
+    prev = report.previous_verdict
+    if (alert or report.changed) and prev is not Verdict.UNKNOWN and prev is not report.verdict:
+        meta.append(f"было: {VERDICT_RU[prev]}")
 
     lines = [
         f"<b>{VERDICT_TITLE[report.verdict]}</b>",
@@ -128,8 +118,6 @@ def render_report(report: ScanReport, tz: tzinfo, *, alert: bool = False) -> str
     ]
     if report.outcomes:
         lines += ["", *(_outcome_line(o) for o in report.outcomes)]
-    if report.finished_at:
-        lines += ["", f"<i>{fmt_time(report.finished_at, tz)}</i>"]
     return "\n".join(lines)
 
 
@@ -142,7 +130,7 @@ def render_checking(domain: str) -> str:
 
 def render_status(stats: DomainStats) -> str:
     total = stats.monitored
-    if not total and not stats.muted:
+    if not total:
         return "<b>Сводка</b>\n\nДоменов пока нет. Обновите списки из источников: /sync_now"
 
     lines = ["<b>Сводка</b>", _domains(total), ""]
@@ -151,24 +139,6 @@ def render_status(stats: DomainStats) -> str:
         for v in VERDICT_ORDER
         if stats.by_verdict.get(v)
     ]
-
-    checked = total - stats.by_verdict.get(Verdict.UNKNOWN, 0)
-    if checked:
-        clean = stats.by_verdict.get(Verdict.CLEAN, 0)
-        lines += ["", f"Чистых — {_pct(clean, checked)}%"]
-
-    footer = []
-    if stats.by_source:
-        footer.append(
-            " · ".join(
-                f"{_e(source_label(s))} {n}"
-                for s, n in sorted(stats.by_source.items(), key=lambda kv: -kv[1])
-            )
-        )
-    if stats.muted:
-        footer.append(f"Не отслеживается — {stats.muted}")
-    if footer:
-        lines += ["", *(f"<i>{f}</i>" for f in footer)]
     return "\n".join(lines)
 
 
@@ -178,10 +148,7 @@ PROBLEM_VERDICTS = frozenset({Verdict.FLAGGED, Verdict.SUSPICIOUS, Verdict.ERROR
 
 
 def _domain_line(d: Domain) -> str:
-    meta = source_label(d.source)
-    if not d.monitoring_enabled:
-        meta += " · не отслеживается"
-    return f"<code>{_e(d.name)}</code>  <i>{_e(meta)}</i>"
+    return f"<code>{_e(d.name)}</code>  <i>{_e(source_label(d.source))}</i>"
 
 
 def render_list(domains: Sequence[Domain], title: str, *, empty_hint: str) -> str:
@@ -259,10 +226,7 @@ def _sync_block(r: SyncResult) -> str:
     title = _e(r.title)
     if not r.ok:
         return f"<b>{title}</b> — ошибка\n<i>{_e(_clip(r.error or ''))}</i>"
-    parts = [f"новых {r.created}", f"обновлено {r.updated}", f"удалено из источника {r.removed}"]
-    if r.foreign:
-        parts.append(f"уже в другом источнике {r.foreign}")
-    return f"<b>{title}</b> — {_domains(r.fetched)}\n<i>{' · '.join(parts)}</i>"
+    return f"<b>{title}</b> — {_domains(r.fetched)}"
 
 
 def render_sync(results: Sequence[SyncResult]) -> str:
@@ -270,9 +234,9 @@ def render_sync(results: Sequence[SyncResult]) -> str:
         return (
             "<b>Синхронизация</b>\n\n"
             "Ни один источник не подключён. Заполните в .env доступы "
-            "PWA.partners и/или SkakApp."
+            "PWApartners и/или SkakApp."
         )
-    return "<b>Синхронизация</b>\n\n" + "\n\n".join(_sync_block(r) for r in results)
+    return "<b>Синхронизация</b>\n\n" + "\n".join(_sync_block(r) for r in results)
 
 
 def render_sync_failure(results: Sequence[SyncResult]) -> str:
@@ -292,26 +256,15 @@ def render_job_crash(job: str) -> str:
 # ── /scan_now ────────────────────────────────────────────────────────────────
 
 
-def render_scan_started(count: int, queue: int) -> str:
-    tail = f" из {queue} в очереди" if queue > count else ""
-    return f"Проверяю {_domains(count)}{tail}…"
+def render_scan_started(count: int) -> str:
+    return f"Проверяю {_domains(count)}…"
 
 
-def render_scan_done(reports: Sequence[ScanReport], remaining: int) -> str:
+def render_scan_done(reports: Sequence[ScanReport]) -> str:
     counts: dict[Verdict, int] = {}
     for r in reports:
         counts[r.verdict] = counts.get(r.verdict, 0) + 1
     summary = " · ".join(
         f"{VERDICT_RU[v]} {counts[v]}" for v in VERDICT_ORDER if counts.get(v)
     )
-    lines = [f"<b>Проверено: {_domains(len(reports))}</b>", summary or "—"]
-    alerts = sum(r.needs_alert for r in reports)
-    if alerts:
-        lines.append(f"Новых проблем: {alerts}, отправлено в группу")
-    if remaining:
-        lines += [
-            "",
-            f"<i>В очереди ещё {remaining} — проверит планировщик "
-            f"или <code>/scan_now {remaining}</code></i>",
-        ]
-    return "\n".join(lines)
+    return f"<b>Проверено: {_domains(len(reports))}</b>\n{summary or '—'}"

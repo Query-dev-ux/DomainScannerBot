@@ -53,7 +53,7 @@ async def _domains() -> dict[str, Domain]:
 
 
 async def test_two_sources_create_their_own_domains():
-    pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("a.com", external_id="u1")])
+    pwa = FakeProvider(DomainSource.PWA, "PWApartners", [sd("a.com", external_id="u1")])
     sk = FakeProvider(DomainSource.SKAKAPP, "SkakApp", [sd("b.com", external_parent_id="p1")])
     results = await DomainSyncService([pwa, sk]).run()
 
@@ -66,7 +66,7 @@ async def test_two_sources_create_their_own_domains():
 
 async def test_every_reported_domain_is_checked_whatever_its_status():
     pwa = FakeProvider(
-        DomainSource.PWA, "PWA.partners", [sd("a.com", status="1"), sd("b.com", status="9")]
+        DomainSource.PWA, "PWApartners", [sd("a.com", status="1"), sd("b.com", status="9")]
     )
     await DomainSyncService([pwa]).run()
     got = await _domains()
@@ -75,12 +75,12 @@ async def test_every_reported_domain_is_checked_whatever_its_status():
 
 
 async def test_a_source_only_drops_its_own_domains():
-    pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("a.com")])
+    pwa = FakeProvider(DomainSource.PWA, "PWApartners", [sd("a.com")])
     sk = FakeProvider(DomainSource.SKAKAPP, "SkakApp", [sd("b.com")])
     service = DomainSyncService([pwa, sk])
     await service.run()
 
-    pwa.domains = []  # a.com disappears from PWA.partners
+    pwa.domains = []  # a.com disappears from PWApartners
     results = await service.run()
 
     got = await _domains()
@@ -90,7 +90,7 @@ async def test_a_source_only_drops_its_own_domains():
 
 
 async def test_domain_that_comes_back_is_checked_again():
-    pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("a.com")])
+    pwa = FakeProvider(DomainSource.PWA, "PWApartners", [sd("a.com")])
     service = DomainSyncService([pwa])
     await service.run()
     pwa.domains = []
@@ -101,7 +101,7 @@ async def test_domain_that_comes_back_is_checked_again():
 
 
 async def test_domain_owned_by_one_source_is_left_alone_by_another():
-    pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("shared.com", external_id="u1")])
+    pwa = FakeProvider(DomainSource.PWA, "PWApartners", [sd("shared.com", external_id="u1")])
     sk = FakeProvider(DomainSource.SKAKAPP, "SkakApp", [sd("shared.com", status="DISABLE")])
     results = await DomainSyncService([pwa, sk]).run()
 
@@ -112,12 +112,12 @@ async def test_domain_owned_by_one_source_is_left_alone_by_another():
 
 
 async def test_domain_dropped_by_its_owner_is_taken_over_by_another_source():
-    pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("shared.com")])
+    pwa = FakeProvider(DomainSource.PWA, "PWApartners", [sd("shared.com")])
     sk = FakeProvider(DomainSource.SKAKAPP, "SkakApp", [sd("shared.com", external_parent_id="p")])
     service = DomainSyncService([pwa, sk])
     await service.run()
 
-    pwa.domains = []  # removed from PWA.partners, still live in SkakApp
+    pwa.domains = []  # removed from PWApartners, still live in SkakApp
     results = await service.run()
 
     got = await _domains()
@@ -140,12 +140,12 @@ async def test_manual_domain_is_adopted_by_the_source_that_reports_it():
 async def test_manual_domains_are_never_deactivated_by_a_sync():
     async with session_scope() as s:
         s.add(Domain(name="m.com", source=DomainSource.MANUAL, is_active=True))
-    await DomainSyncService([FakeProvider(DomainSource.PWA, "PWA.partners", [])]).run()
+    await DomainSyncService([FakeProvider(DomainSource.PWA, "PWApartners", [])]).run()
     assert (await _domains())["m.com"].is_active is True
 
 
 async def test_one_failing_source_does_not_stop_the_other():
-    pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("a.com")])
+    pwa = FakeProvider(DomainSource.PWA, "PWApartners", [sd("a.com")])
     pwa.fail = RuntimeError("HTTP 500")
     sk = FakeProvider(DomainSource.SKAKAPP, "SkakApp", [sd("b.com")])
     results = await DomainSyncService([pwa, sk]).run()
@@ -161,7 +161,7 @@ async def test_one_failing_source_does_not_stop_the_other():
 
 
 async def test_status_change_is_matched_by_external_id():
-    pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("old.com", external_id="u1")])
+    pwa = FakeProvider(DomainSource.PWA, "PWApartners", [sd("old.com", external_id="u1")])
     service = DomainSyncService([pwa])
     await service.run()
     pwa.domains = [sd("old.com", external_id="u1", status="9")]

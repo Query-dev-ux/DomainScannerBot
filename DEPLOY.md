@@ -50,7 +50,7 @@ nano .env
 | `BOT_TOKEN` | токен бота от @BotFather |
 | `ALERT_CHAT_ID` | id группы для алертов (для супергруппы — вида `-100…`) |
 | `ADMIN_IDS` | ваши Telegram user id через запятую |
-| `PWA_API_KEY`, `PWA_TEAM_UUID`, `PWA_TEAMATE_UUID` | источник PWA.partners (пусто — источник не подключается) |
+| `PWA_API_KEY`, `PWA_TEAM_UUID`, `PWA_TEAMATE_UUID` | источник PWApartners (пусто — источник не подключается) |
 | `SKAKAPP_LOGIN`, `SKAKAPP_PASSWORD` | источник SkakApp: логин и пароль от кабинета (Basic-auth). Нужны оба, иначе источник не подключается. API-ключ SkakApp не нужен. Старые имена `UCLIENT_LOGIN` / `UCLIENT_PASSWORD` тоже принимаются |
 | `GSB_API_KEY` | ключ Google Safe Browsing (можно оставить пустым — чекер отключится) |
 | `FB_APP_ID`, `FB_APP_SECRET` | проверка блокировки домена в Facebook (см. ниже; пусто — чекер отключится) |

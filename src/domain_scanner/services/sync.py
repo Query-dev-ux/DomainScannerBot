@@ -46,7 +46,7 @@ class DomainSyncService:
 
     Every domain a source reports is checked. Each source owns its rows: a sync only
     updates domains whose `source` matches, and only its own domains stop being
-    checked when they disappear from it — PWA.partners and SkakApp never touch each
+    checked when they disappear from it — PWApartners and SkakApp never touch each
     other's domains. Manually added domains are adopted by the first source that
     reports them, and a domain its owner dropped is taken over by any other source
     that still reports it.

@@ -46,7 +46,7 @@ async def _recheck(
     report = await app.scanner.scan_domain(domain_id)
     if report is None:
         return
-    text = render.render_report(report, app.tz)
+    text = render.render_report(report)
     markup = domain_keyboard(domain_id, monitoring_enabled=monitoring)
     if message is not None:
         # A fresh card as a reply, so the original alert stays as history.

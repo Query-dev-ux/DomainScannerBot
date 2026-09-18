@@ -80,10 +80,7 @@ async def cmd_add(message: Message, command: CommandObject) -> None:
     async with session_scope() as session:
         _, created = await DomainRepository(session).add_manual(name)
     if created:
-        await message.answer(
-            f"Добавлен <code>{render._e(name)}</code>. Проверю в ближайший прогон.\n"
-            f"<i>Проверить сейчас: /check {render._e(name)}</i>"
-        )
+        await message.answer(f"Добавлен <code>{render._e(name)}</code>.")
     else:
         await message.answer(f"<code>{render._e(name)}</code> уже в списке.")
 
@@ -106,7 +103,7 @@ async def cmd_check(message: Message, command: CommandObject, app: Application) 
         return
 
     await progress.edit_text(
-        render.render_report(report, app.tz),
+        render.render_report(report),
         reply_markup=domain_keyboard(domain_id, monitoring_enabled=monitoring),
     )
     await alert_if_needed(app, report, message.chat.id)
@@ -132,22 +129,18 @@ async def cmd_scan_now(message: Message, command: CommandObject, app: Applicatio
 
     queue = await count_due_domains(interval)
     if not queue:
-        await message.answer(
-            "Очередь пуста: все домены проверены недавно.\n"
-            "<i>Следующая перепроверка по расписанию: /jobs</i>"
-        )
+        await message.answer("Все домены проверены недавно.")
         return
 
     ids = await collect_due_domain_ids(interval, limit=limit)
-    progress = await message.answer(render.render_scan_started(len(ids), queue))
+    progress = await message.answer(render.render_scan_started(len(ids)))
 
     reports = await app.scanner.scan_many(ids)
     for report in reports:
         if report.needs_alert:
             await app.notifier.notify_scan(report)
 
-    remaining = await count_due_domains(interval)
-    await progress.edit_text(render.render_scan_done(reports, remaining))
+    await progress.edit_text(render.render_scan_done(reports))
 
 
 @router.message(Command("jobs"))

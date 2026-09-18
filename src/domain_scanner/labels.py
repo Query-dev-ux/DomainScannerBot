@@ -35,7 +35,7 @@ CHECKER_LABELS: dict[str, str] = {
 }
 
 SOURCE_LABELS: dict[DomainSource, str] = {
-    DomainSource.PWA: "PWA.partners",
+    DomainSource.PWA: "PWApartners",
     DomainSource.SKAKAPP: "SkakApp",
     DomainSource.MANUAL: "вручную",
 }

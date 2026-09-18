@@ -44,9 +44,7 @@ class Application:
                 link_preview=LinkPreviewOptions(is_disabled=True),
             ),
         )
-        self.notifier = Notifier(
-            self.bot, settings.alert_chat_id, settings.alert_thread_id, tz=self.tz
-        )
+        self.notifier = Notifier(self.bot, settings.alert_chat_id, settings.alert_thread_id)
         self.scanner = ScannerService(
             build_checkers(settings), concurrency=settings.scan_concurrency
         )
@@ -72,14 +70,7 @@ class Application:
         log.info("app.started", sources=sources, checkers=checkers)
 
         await self._set_commands()
-        await self.notifier.notify_text(
-            render_startup(
-                sources,
-                checkers,
-                self.settings.sync_interval_minutes,
-                self.settings.scan_interval_minutes,
-            )
-        )
+        await self.notifier.notify_text(render_startup(sources, checkers))
         try:
             await self.dp.start_polling(self.bot, handle_signals=True)
         finally:

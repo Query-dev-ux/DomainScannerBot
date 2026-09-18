@@ -71,7 +71,7 @@ class Domain(TimestampMixin, Base):
         domain_source_enum, default=DomainSource.PWA, nullable=False
     )
 
-    # Linkage to the source platform (PWA.partners / SkakApp). Meaning is per source:
+    # Linkage to the source platform (PWApartners / SkakApp). Meaning is per source:
     # external_id — the domain's own id there (if it has one), external_parent_id —
     # the owning PWA app, external_status — the raw status string/code.
     external_id: Mapped[str | None] = mapped_column(String(128))

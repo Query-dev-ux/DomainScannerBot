@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     admin_ids: str = ""
 
     # Domain sources — each one is enabled when its credentials are set.
-    # PWA.partners Open API
+    # PWApartners Open API
     pwa_api_base_url: str = "https://openapi.pwa.partners/api"
     pwa_api_key: str | None = None
     pwa_team_uuid: str | None = None

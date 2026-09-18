@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import tzinfo
-
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.types import InlineKeyboardMarkup, LinkPreviewOptions
@@ -17,13 +15,10 @@ log = get_logger(__name__)
 class Notifier:
     """Posts into the alert group (optionally into one forum topic)."""
 
-    def __init__(
-        self, bot: Bot, chat_id: int, thread_id: int | None = None, *, tz: tzinfo
-    ) -> None:
+    def __init__(self, bot: Bot, chat_id: int, thread_id: int | None = None) -> None:
         self._bot = bot
         self.chat_id = chat_id
         self._thread_id = thread_id
-        self._tz = tz
 
     async def _send(self, text: str, markup: InlineKeyboardMarkup | None = None) -> None:
         try:
@@ -40,7 +35,7 @@ class Notifier:
 
     async def notify_scan(self, report: ScanReport) -> None:
         markup = domain_keyboard(report.domain_id) if report.domain_id else None
-        await self._send(render_report(report, self._tz, alert=True), markup)
+        await self._send(render_report(report, alert=True), markup)
 
     async def notify_text(self, text: str) -> None:
         await self._send(text)

@@ -33,10 +33,10 @@ def parse_domains(items: list[dict[str, Any]]) -> list[SourceDomain]:
 
 
 class PwaPartnersProvider:
-    """PWA.partners Open API (dash_api). Auth via X-Api-Key / X-Team-UUID headers."""
+    """PWApartners Open API (dash_api). Auth via X-Api-Key / X-Team-UUID headers."""
 
     source = DomainSource.PWA
-    title = "PWA.partners"
+    title = "PWApartners"
 
     def __init__(
         self,
