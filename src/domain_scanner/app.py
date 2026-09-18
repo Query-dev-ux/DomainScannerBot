@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from datetime import UTC, tzinfo
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
@@ -25,18 +23,9 @@ from domain_scanner.sources import build_providers
 log = get_logger(__name__)
 
 
-def _load_timezone(name: str) -> tzinfo:
-    try:
-        return ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError):
-        log.warning("app.bad_timezone", display_timezone=name, fallback="UTC")
-        return UTC
-
-
 class Application:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.tz = _load_timezone(settings.display_timezone)
         self.bot = Bot(
             token=settings.bot_token,
             default=DefaultBotProperties(

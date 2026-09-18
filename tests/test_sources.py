@@ -103,7 +103,5 @@ def test_skakapp_sends_login_and_password_as_basic_auth():
     assert base64.b64decode(token).decode() == "me:p:w"
 
 
-def test_defaults_check_hourly_and_show_moscow_time():
-    s = _settings()
-    assert s.scan_interval_minutes == 60
-    assert s.display_timezone == "Europe/Moscow"
+def test_default_is_to_check_hourly():
+    assert _settings().scan_interval_minutes == 60

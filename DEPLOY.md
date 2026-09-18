@@ -55,7 +55,6 @@ nano .env
 | `GSB_API_KEY` | ключ Google Safe Browsing (можно оставить пустым — чекер отключится) |
 | `FB_APP_ID`, `FB_APP_SECRET` | проверка блокировки домена в Facebook (см. ниже; пусто — чекер отключится) |
 | `POSTGRES_PASSWORD` | придумать надёжный пароль |
-| `DISPLAY_TIMEZONE` | часовой пояс времени в сообщениях (по умолчанию `Europe/Moscow`, UTC+3) |
 
 `POSTGRES_HOST=db` и `POSTGRES_PORT=5432` менять не нужно — это адрес контейнера
 внутри сети проекта.
@@ -105,8 +104,6 @@ docker compose logs -f bot
 ```bash
 docker compose logs bot | grep job.registered   # next_run_time не должен быть None
 ```
-
-В боте то же самое показывает `/jobs` — как часто и когда следующий запуск.
 
 Разовая проверка миграций:
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from aiogram import Router
@@ -13,7 +12,6 @@ from domain_scanner.db import session_scope
 from domain_scanner.db.models import Verdict
 from domain_scanner.labels import VERDICT_RU
 from domain_scanner.repositories import DomainRepository
-from domain_scanner.scheduler.jobs import SCAN_JOB_ID, SYNC_JOB_ID
 from domain_scanner.services.scanner import ScanReport, collect_monitored_domain_ids
 from domain_scanner.utils import normalize_domain
 
@@ -21,12 +19,6 @@ if TYPE_CHECKING:
     from domain_scanner.app import Application
 
 router = Router(name="domains")
-
-_JOB_NAMES = {
-    SYNC_JOB_ID: "Синхронизация доменов",
-    SCAN_JOB_ID: "Проверка всех доменов",
-}
-
 
 async def alert_if_needed(app: Application, report: ScanReport, chat_id: int) -> None:
     """A manual check can be the one that catches a domain going bad — the group
@@ -65,20 +57,6 @@ async def cmd_list(message: Message, command: CommandObject) -> None:
     async with session_scope() as session:
         domains = await DomainRepository(session).list_for_display(verdicts)
     await message.answer(render.render_list(domains, title, empty_hint=hint))
-
-
-@router.message(Command("add"))
-async def cmd_add(message: Message, command: CommandObject) -> None:
-    name = normalize_domain(command.args)
-    if name is None:
-        await message.answer("Использование: <code>/add example.com</code>")
-        return
-    async with session_scope() as session:
-        _, created = await DomainRepository(session).add_manual(name)
-    if created:
-        await message.answer(f"Добавлен <code>{render._e(name)}</code>.")
-    else:
-        await message.answer(f"<code>{render._e(name)}</code> уже в списке.")
 
 
 @router.message(Command("check"))
@@ -126,19 +104,3 @@ async def cmd_scan_now(message: Message, app: Application) -> None:
             await app.notifier.notify_scan(report)
 
     await progress.edit_text(render.render_scan_done(reports))
-
-
-@router.message(Command("jobs"))
-async def cmd_jobs(message: Message, app: Application) -> None:
-    jobs = []
-    for job in app.scheduler.get_jobs():
-        name = _JOB_NAMES.get(job.id, job.name or job.id)
-        interval = getattr(job.trigger, "interval", None)
-        every = int(interval.total_seconds() // 60) if interval else 0
-        jobs.append(render.JobInfo(name, every, job.next_run_time))
-
-    if not jobs:
-        await message.answer("Планировщик не зарегистрировал ни одной задачи.")
-        return
-
-    await message.answer(render.render_jobs(jobs, datetime.now(UTC), app.tz))

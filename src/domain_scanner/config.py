@@ -62,9 +62,6 @@ class Settings(BaseSettings):
     scan_interval_minutes: int = 60
     scan_concurrency: int = 5
 
-    # Timezone used for times shown in Telegram messages (IANA name). Moscow = UTC+3.
-    display_timezone: str = "Europe/Moscow"
-
     log_level: str = "INFO"
 
     @computed_field  # type: ignore[prop-decorator]

@@ -9,9 +9,7 @@ outside (domains, API errors) must go through `_e`.
 from __future__ import annotations
 
 import html
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
-from datetime import datetime, tzinfo
+from collections.abc import Sequence
 
 from domain_scanner.checkers.base import CheckOutcome
 from domain_scanner.db.models import Domain, Verdict
@@ -46,20 +44,14 @@ def _domains(n: int) -> str:
     return f"{n} {plural(n, 'домен', 'домена', 'доменов')}"
 
 
-def fmt_time(moment: datetime, tz: tzinfo) -> str:
-    return f"{moment.astimezone(tz):%H:%M}"
-
-
 # ── Help / startup ────────────────────────────────────────────────────────────
 
 BOT_COMMANDS: tuple[tuple[str, str], ...] = (
     ("status", "Сводка по доменам"),
     ("list", "Проблемные домены"),
     ("check", "Проверить домен"),
-    ("jobs", "Расписание проверок"),
     ("scan_now", "Проверить все домены сейчас"),
     ("sync_now", "Обновить списки из источников"),
-    ("add", "Добавить домен вручную"),
     ("help", "Справка"),
 )
 
@@ -70,9 +62,8 @@ def render_help() -> str:
         "Следит за репутацией доменов и сообщает в группу, когда домен зашкварен.\n\n"
         "/status — сводка\n"
         "/list — проблемные домены, <code>/list all</code> — все\n"
-        "/jobs — расписание проверок\n\n"
+        "\n"
         "/check <code>домен</code> — проверить сейчас\n"
-        "/add <code>домен</code> — добавить вручную\n"
         "/scan_now — проверить все домены сейчас\n"
         "/sync_now — обновить списки из источников"
     )
@@ -179,28 +170,6 @@ def render_list(domains: Sequence[Domain], title: str, *, empty_hint: str) -> st
             shown += 1
     if shown < len(domains):
         lines += ["", f"<i>И ещё {len(domains) - shown}. Сузьте фильтр: /list flagged</i>"]
-    return "\n".join(lines)
-
-
-# ── /jobs ────────────────────────────────────────────────────────────────────
-
-
-@dataclass(slots=True)
-class JobInfo:
-    name: str
-    every_minutes: int
-    next_run: datetime | None
-
-
-def render_jobs(jobs: Iterable[JobInfo], now: datetime, tz: tzinfo) -> str:
-    lines = ["<b>Расписание</b>", ""]
-    for job in jobs:
-        if job.next_run is None:
-            when = "на паузе"
-        else:
-            mins = max(0, round((job.next_run - now).total_seconds() / 60))
-            when = f"следующая в {fmt_time(job.next_run, tz)}, через {mins} мин"
-        lines += [f"{_e(job.name)} — каждые {job.every_minutes} мин", f"<i>{when}</i>"]
     return "\n".join(lines)
 
 

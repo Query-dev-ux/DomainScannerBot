@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import UTC, datetime
 
 import pytest
 
@@ -14,7 +13,6 @@ from domain_scanner.repositories.domains import DomainStats
 from domain_scanner.services.scanner import ScanReport
 from domain_scanner.services.sync import SyncResult
 
-MSK = ZoneInfo("Europe/Moscow")
 WHEN = datetime(2026, 9, 18, 9, 40, tzinfo=UTC)
 EMOJI = re.compile("[\U0001F000-\U0001FAFF☀-➿⬀-⯿️■-◿]")
 
@@ -53,7 +51,6 @@ def _every_message() -> list[str]:
         SyncResult(DomainSource.PWA, "PWApartners", fetched=5, removed=1, foreign=1),
         SyncResult(DomainSource.SKAKAPP, "SkakApp", error="HTTP 401"),
     ]
-    jobs = [render.JobInfo("Проверка", 60, WHEN + timedelta(minutes=5))]
     return [
         render.render_help(),
         render.render_startup(["PWApartners", "SkakApp"], ["dns_rbl"]),
@@ -63,7 +60,6 @@ def _every_message() -> list[str]:
         render.render_status(stats),
         render.render_status(DomainStats()),
         render.render_list([_domain("a.com", Verdict.FLAGGED)], "Проблемные", empty_hint="—"),
-        render.render_jobs(jobs, WHEN, MSK),
         render.render_sync(sync),
         render.render_sync([]),
         render.render_sync_failure(sync),
@@ -187,14 +183,3 @@ def test_sync_card_reports_each_source():
     assert "<b>SkakApp</b> — ошибка" in text
     failure = render.render_sync_failure(results)
     assert "SkakApp" in failure and "PWApartners" not in failure
-
-
-def test_jobs_card_shows_moscow_time():
-    jobs = [render.JobInfo("Проверка всех доменов", 60, WHEN + timedelta(minutes=12))]
-    text = render.render_jobs(jobs, WHEN, MSK)
-    # 09:52 UTC -> 12:52 in UTC+3
-    assert text == (
-        "<b>Расписание</b>\n\n"
-        "Проверка всех доменов — каждые 60 мин\n"
-        "<i>следующая в 12:52, через 12 мин</i>"
-    )
