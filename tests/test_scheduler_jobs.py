@@ -6,20 +6,14 @@ from types import SimpleNamespace
 import pytest
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from domain_scanner.scheduler.jobs import (
-    SCAN_JOB_ID,
-    SYNC_JOB_ID,
-    register_jobs,
-    scan_tick_minutes,
-)
+from domain_scanner.scheduler.jobs import SCAN_JOB_ID, SYNC_JOB_ID, register_jobs
 
 
 @pytest.fixture
 def app() -> SimpleNamespace:
     settings = SimpleNamespace(
         sync_interval_minutes=60,
-        scan_interval_minutes=180,
-        scan_batch_size=50,
+        scan_interval_minutes=60,
     )
     return SimpleNamespace(settings=settings)
 
@@ -65,9 +59,7 @@ def test_jobs_do_not_overlap_and_survive_downtime(scheduler, app):
         assert job.misfire_grace_time and job.misfire_grace_time > 0
 
 
-@pytest.mark.parametrize(
-    ("interval", "expected"),
-    [(180, 60), (60, 20), (3, 1), (1, 1), (2, 1)],
-)
-def test_scan_tick_is_a_fraction_of_the_interval(interval: int, expected: int):
-    assert scan_tick_minutes(interval) == expected
+def test_scan_runs_every_scan_interval(scheduler, app):
+    register_jobs(scheduler, app)
+    scan = scheduler.get_job(SCAN_JOB_ID)
+    assert scan.trigger.interval == timedelta(minutes=app.settings.scan_interval_minutes)

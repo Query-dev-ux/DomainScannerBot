@@ -47,8 +47,7 @@ def _domains(n: int) -> str:
 
 
 def fmt_time(moment: datetime, tz: tzinfo) -> str:
-    local = moment.astimezone(tz)
-    return f"{local:%d.%m, %H:%M} {local.tzname()}"
+    return f"{moment.astimezone(tz):%H:%M}"
 
 
 # ── Help / startup ────────────────────────────────────────────────────────────
@@ -58,7 +57,7 @@ BOT_COMMANDS: tuple[tuple[str, str], ...] = (
     ("list", "Проблемные домены"),
     ("check", "Проверить домен"),
     ("jobs", "Расписание проверок"),
-    ("scan_now", "Проверить очередь сейчас"),
+    ("scan_now", "Проверить все домены сейчас"),
     ("sync_now", "Обновить списки из источников"),
     ("add", "Добавить домен вручную"),
     ("help", "Справка"),
@@ -74,7 +73,7 @@ def render_help() -> str:
         "/jobs — расписание проверок\n\n"
         "/check <code>домен</code> — проверить сейчас\n"
         "/add <code>домен</code> — добавить вручную\n"
-        "/scan_now — проверить очередь\n"
+        "/scan_now — проверить все домены сейчас\n"
         "/sync_now — обновить списки из источников"
     )
 
@@ -193,29 +192,15 @@ class JobInfo:
     next_run: datetime | None
 
 
-def render_jobs(
-    jobs: Iterable[JobInfo],
-    now: datetime,
-    tz: tzinfo,
-    *,
-    scan_interval: int,
-    batch_size: int,
-    queue: int,
-) -> str:
+def render_jobs(jobs: Iterable[JobInfo], now: datetime, tz: tzinfo) -> str:
     lines = ["<b>Расписание</b>", ""]
     for job in jobs:
         if job.next_run is None:
             when = "на паузе"
         else:
             mins = max(0, round((job.next_run - now).total_seconds() / 60))
-            when = f"следующий запуск {fmt_time(job.next_run, tz)}, через {mins} мин"
-        lines.append(f"{_e(job.name)} — каждые {job.every_minutes} мин")
-        lines.append(f"<i>{when}</i>")
-    lines += [
-        "",
-        f"Домен перепроверяется раз в {scan_interval} мин, до {batch_size} за прогон.",
-        f"В очереди: {queue}",
-    ]
+            when = f"следующая в {fmt_time(job.next_run, tz)}, через {mins} мин"
+        lines += [f"{_e(job.name)} — каждые {job.every_minutes} мин", f"<i>{when}</i>"]
     return "\n".join(lines)
 
 

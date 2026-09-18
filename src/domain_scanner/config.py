@@ -58,14 +58,12 @@ class Settings(BaseSettings):
 
     # Scheduler
     sync_interval_minutes: int = 60
-    scan_interval_minutes: int = 180
+    # Every monitored domain is checked once per this interval.
+    scan_interval_minutes: int = 60
     scan_concurrency: int = 5
-    # Max domains one scheduled scan run handles, so a large backlog is drained
-    # over several runs instead of bursting into external API rate limits.
-    scan_batch_size: int = 50
 
-    # Timezone used for times shown in Telegram messages (IANA name).
-    display_timezone: str = "UTC"
+    # Timezone used for times shown in Telegram messages (IANA name). Moscow = UTC+3.
+    display_timezone: str = "Europe/Moscow"
 
     log_level: str = "INFO"
 

@@ -14,11 +14,7 @@ from domain_scanner.db.models import Verdict
 from domain_scanner.labels import VERDICT_RU
 from domain_scanner.repositories import DomainRepository
 from domain_scanner.scheduler.jobs import SCAN_JOB_ID, SYNC_JOB_ID
-from domain_scanner.services.scanner import (
-    ScanReport,
-    collect_due_domain_ids,
-    count_due_domains,
-)
+from domain_scanner.services.scanner import ScanReport, collect_monitored_domain_ids
 from domain_scanner.utils import normalize_domain
 
 if TYPE_CHECKING:
@@ -27,8 +23,8 @@ if TYPE_CHECKING:
 router = Router(name="domains")
 
 _JOB_NAMES = {
-    SYNC_JOB_ID: "Синхронизация источников",
-    SCAN_JOB_ID: "Проверка доменов",
+    SYNC_JOB_ID: "Синхронизация доменов",
+    SCAN_JOB_ID: "Проверка всех доменов",
 }
 
 
@@ -117,22 +113,11 @@ async def cmd_sync_now(message: Message, app: Application) -> None:
 
 
 @router.message(Command("scan_now"))
-async def cmd_scan_now(message: Message, command: CommandObject, app: Application) -> None:
-    interval = app.settings.scan_interval_minutes
-    limit = app.settings.scan_batch_size
-    arg = (command.args or "").strip()
-    if arg:
-        if not arg.isdigit() or int(arg) < 1:
-            await message.answer("Использование: <code>/scan_now [сколько доменов]</code>")
-            return
-        limit = int(arg)
-
-    queue = await count_due_domains(interval)
-    if not queue:
-        await message.answer("Все домены проверены недавно.")
+async def cmd_scan_now(message: Message, app: Application) -> None:
+    ids = await collect_monitored_domain_ids()
+    if not ids:
+        await message.answer("Доменов пока нет: /sync_now")
         return
-
-    ids = await collect_due_domain_ids(interval, limit=limit)
     progress = await message.answer(render.render_scan_started(len(ids)))
 
     reports = await app.scanner.scan_many(ids)
@@ -156,14 +141,4 @@ async def cmd_jobs(message: Message, app: Application) -> None:
         await message.answer("Планировщик не зарегистрировал ни одной задачи.")
         return
 
-    queue = await count_due_domains(app.settings.scan_interval_minutes)
-    await message.answer(
-        render.render_jobs(
-            jobs,
-            datetime.now(UTC),
-            app.tz,
-            scan_interval=app.settings.scan_interval_minutes,
-            batch_size=app.settings.scan_batch_size,
-            queue=queue,
-        )
-    )
+    await message.answer(render.render_jobs(jobs, datetime.now(UTC), app.tz))

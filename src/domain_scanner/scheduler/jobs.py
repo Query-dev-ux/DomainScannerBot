@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from domain_scanner.bot.render import render_job_crash, render_sync_failure
 from domain_scanner.logging import get_logger
-from domain_scanner.services.scanner import collect_due_domain_ids, count_due_domains
+from domain_scanner.services.scanner import collect_monitored_domain_ids
 
 if TYPE_CHECKING:
     from domain_scanner.app import Application
@@ -42,35 +42,18 @@ async def run_sync(app: Application) -> None:
 
 
 async def run_scan(app: Application) -> None:
-    batch_size = app.settings.scan_batch_size
-    interval = app.settings.scan_interval_minutes
-    log.info("job.scan.start", batch_size=batch_size)
+    """Check every monitored domain."""
+    log.info("job.scan.start")
     try:
-        domain_ids = await collect_due_domain_ids(interval, limit=batch_size)
-        if not domain_ids:
-            log.info("job.scan.nothing_due")
-            return
+        domain_ids = await collect_monitored_domain_ids()
         reports = await app.scanner.scan_many(domain_ids)
         alerts = [r for r in reports if r.needs_alert]
         for report in alerts:
             await app.notifier.notify_scan(report)
-        remaining = await count_due_domains(interval)
-        log.info(
-            "job.scan.done", scanned=len(reports), alerts=len(alerts), remaining=remaining
-        )
+        log.info("job.scan.done", scanned=len(reports), alerts=len(alerts))
     except Exception:
         log.exception("job.scan.error")
         await app.notifier.notify_text(render_job_crash("Плановая проверка"))
-
-
-def scan_tick_minutes(scan_interval_minutes: int) -> int:
-    """How often the scan job wakes up.
-
-    Runs more often than the per-domain interval so domains become due in a
-    rolling fashion instead of all at once, and so a batched backlog drains
-    within one interval.
-    """
-    return max(1, scan_interval_minutes // 3)
 
 
 def register_jobs(scheduler: AsyncIOScheduler, app: Application) -> None:
@@ -82,19 +65,21 @@ def register_jobs(scheduler: AsyncIOScheduler, app: Application) -> None:
         "interval",
         minutes=settings.sync_interval_minutes,
         id=SYNC_JOB_ID,
-        name="Синхронизация доменов из PWA API",
+        name="Синхронизация доменов",
         args=[app],
         max_instances=1,
         coalesce=True,
         misfire_grace_time=MISFIRE_GRACE_SECONDS,
         next_run_time=now + FIRST_SYNC_DELAY,
     )
+    # A run that outlasts the interval is not started twice (max_instances=1);
+    # the next one simply follows it.
     scheduler.add_job(
         run_scan,
         "interval",
-        minutes=scan_tick_minutes(settings.scan_interval_minutes),
+        minutes=settings.scan_interval_minutes,
         id=SCAN_JOB_ID,
-        name="Проверка репутации доменов",
+        name="Проверка всех доменов",
         args=[app],
         max_instances=1,
         coalesce=True,
