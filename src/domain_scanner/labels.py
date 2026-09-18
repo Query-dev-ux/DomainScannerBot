@@ -2,14 +2,6 @@ from __future__ import annotations
 
 from domain_scanner.db.models import DomainSource, Verdict
 
-VERDICT_EMOJI: dict[Verdict, str] = {
-    Verdict.UNKNOWN: "❔",
-    Verdict.CLEAN: "✅",
-    Verdict.SUSPICIOUS: "⚠️",
-    Verdict.FLAGGED: "🚨",
-    Verdict.ERROR: "🛑",
-}
-
 VERDICT_RU: dict[Verdict, str] = {
     Verdict.UNKNOWN: "не проверен",
     Verdict.CLEAN: "чисто",
@@ -44,7 +36,7 @@ CHECKER_LABELS: dict[str, str] = {
 
 SOURCE_LABELS: dict[DomainSource, str] = {
     DomainSource.PWA: "PWA.partners",
-    DomainSource.UCLIENT: "UClient",
+    DomainSource.SKAKAPP: "SkakApp",
     DomainSource.MANUAL: "вручную",
 }
 
@@ -55,3 +47,16 @@ def checker_label(name: str) -> str:
 
 def source_label(source: DomainSource | None) -> str:
     return SOURCE_LABELS.get(source, "—") if source else "—"
+
+
+def plural(n: int, one: str, few: str, many: str) -> str:
+    """Russian plural: plural(5, "домен", "домена", "доменов") -> "доменов"."""
+    tail = n % 100
+    if 11 <= tail <= 14:
+        return many
+    last = n % 10
+    if last == 1:
+        return one
+    if 2 <= last <= 4:
+        return few
+    return many

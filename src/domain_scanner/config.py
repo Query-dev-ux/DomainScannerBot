@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import PostgresDsn, computed_field, field_validator
+from pydantic import AliasChoices, Field, PostgresDsn, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +11,9 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        # Lets code and tests pass settings by field name even when a field has an
+        # env alias (e.g. skakapp_login ← SKAKAPP_LOGIN / UCLIENT_LOGIN).
+        populate_by_name=True,
     )
 
     # Telegram
@@ -26,11 +29,19 @@ class Settings(BaseSettings):
     pwa_api_key: str | None = None
     pwa_team_uuid: str | None = None
     pwa_teamate_uuid: str | None = None
-    # UClient (skakapp) API — HTTP Basic auth with the account login and password.
-    # (UClient also issues an API key; this API does not use it.)
-    uclient_api_base_url: str = "https://uclient.skakapp.com/api"
-    uclient_login: str | None = None
-    uclient_password: str | None = None
+    # SkakApp API — HTTP Basic auth with the account login and password (the API key
+    # SkakApp also issues is not used). UCLIENT_* names are still accepted: that is
+    # what these settings were called before the rename.
+    skakapp_api_base_url: str = Field(
+        default="https://uclient.skakapp.com/api",
+        validation_alias=AliasChoices("SKAKAPP_API_BASE_URL", "UCLIENT_API_BASE_URL"),
+    )
+    skakapp_login: str | None = Field(
+        default=None, validation_alias=AliasChoices("SKAKAPP_LOGIN", "UCLIENT_LOGIN")
+    )
+    skakapp_password: str | None = Field(
+        default=None, validation_alias=AliasChoices("SKAKAPP_PASSWORD", "UCLIENT_PASSWORD")
+    )
 
     # Checkers
     gsb_api_key: str | None = None

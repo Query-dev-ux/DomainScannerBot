@@ -13,12 +13,12 @@ def domain_keyboard(domain_id: int, *, monitoring_enabled: bool = True) -> Inlin
     """Buttons under an alert or a /check card."""
     toggle = (
         InlineKeyboardButton(
-            text="🔕 Не следить",
+            text="Не отслеживать",
             callback_data=DomainAction(action="mute", domain_id=domain_id).pack(),
         )
         if monitoring_enabled
         else InlineKeyboardButton(
-            text="🔔 Вернуть в мониторинг",
+            text="Отслеживать",
             callback_data=DomainAction(action="unmute", domain_id=domain_id).pack(),
         )
     )
@@ -26,7 +26,7 @@ def domain_keyboard(domain_id: int, *, monitoring_enabled: bool = True) -> Inlin
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔁 Перепроверить",
+                    text="Перепроверить",
                     callback_data=DomainAction(action="recheck", domain_id=domain_id).pack(),
                 ),
                 toggle,

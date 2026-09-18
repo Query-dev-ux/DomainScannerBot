@@ -13,23 +13,11 @@ from domain_scanner.utils import normalize_domain
 
 log = get_logger(__name__)
 
-UCLIENT_STATUS_ACTIVE = "ACTIVE"
-UCLIENT_STATUS_LABELS: dict[str, str] = {
-    "NEW": "новая",
-    "ACTIVE": "активна",
-    "DISABLE": "выключена",
-    "DISABLE_BALANCE": "выключена (баланс)",
-    "ARCHIVE": "в архиве",
-}
 
 def basic_auth_header(login: str, password: str) -> str:
     # Built by hand: aiohttp.BasicAuth is deprecated and goes away in aiohttp 4.
     token = base64.b64encode(f"{login}:{password}".encode()).decode("ascii")
     return f"Basic {token}"
-
-
-# How a domain is attached to its PWA — shown next to the status.
-_ROLE_LABELS = {"main": "", "ext": "доп. домен", "split": "сплит"}
 
 
 def _pwa_domains(pwa: dict[str, Any]) -> list[tuple[str | None, str, str | None]]:
@@ -48,44 +36,35 @@ def parse_pwas(pwas: list[dict[str, Any]]) -> list[SourceDomain]:
     """Map one page of `POST /pwa/list` onto SourceDomain.
 
     A PWA can carry a main domain, extra domains and split domains; all of them
-    receive traffic, so each becomes its own SourceDomain with the PWA's status.
+    receive traffic, so each becomes its own SourceDomain.
     """
     result: list[SourceDomain] = []
     for pwa in pwas:
-        status = pwa.get("status")
-        base_label = UCLIENT_STATUS_LABELS.get(status or "", status or "неизвестно")
         for raw_domain, role, split_id in _pwa_domains(pwa):
             name = normalize_domain(raw_domain)
             if name is None:
                 continue
-            role_label = _ROLE_LABELS[role]
             result.append(
                 SourceDomain(
                     name=name,
-                    is_active=status == UCLIENT_STATUS_ACTIVE,
-                    status=status,
-                    status_label=f"{base_label} · {role_label}" if role_label else base_label,
+                    status=pwa.get("status"),
                     external_id=split_id,
                     external_parent_id=pwa.get("id"),
-                    raw={
-                        "pwa_id": pwa.get("id"),
-                        "pwa_name": pwa.get("name"),
-                        "role": role,
-                    },
+                    raw={"pwa_id": pwa.get("id"), "pwa_name": pwa.get("name"), "role": role},
                 )
             )
     return result
 
 
-class UClientProvider:
-    """UClient (skakapp) API — https://uclient.skakapp.com/api-docs/.
+class SkakAppProvider:
+    """SkakApp API — https://uclient.skakapp.com/api-docs/.
 
     HTTP Basic auth with the account login and password — verified against the live
-    API; the separate UClient API key is rejected here and is not needed.
+    API; the separate API key SkakApp issues is rejected here and is not needed.
     """
 
-    source = DomainSource.UCLIENT
-    title = "UClient"
+    source = DomainSource.SKAKAPP
+    title = "SkakApp"
 
     def __init__(
         self,
@@ -117,8 +96,8 @@ class UClientProvider:
             text = await resp.text()
             if resp.status == 401:
                 raise SourceError(
-                    "HTTP 401: UClient не принял логин/пароль — проверьте "
-                    "UCLIENT_LOGIN и UCLIENT_PASSWORD"
+                    "HTTP 401: SkakApp не принял логин/пароль — проверьте "
+                    "SKAKAPP_LOGIN и SKAKAPP_PASSWORD"
                 )
             if resp.status >= 400:
                 raise SourceError(f"POST {path} → HTTP {resp.status}: {text[:300]}")

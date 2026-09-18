@@ -26,9 +26,9 @@ class AdminOnlyMiddleware(BaseMiddleware):
         user = data.get("event_from_user")
         if user is not None and self._admin_ids and user.id not in self._admin_ids:
             if isinstance(event, Message):
-                await event.answer("⛔ Нет доступа.")
+                await event.answer("Нет доступа.")
             elif isinstance(event, CallbackQuery):
-                await event.answer("⛔ Нет доступа", show_alert=True)
+                await event.answer("Нет доступа", show_alert=True)
             log.warning("bot.access_denied", user_id=user.id)
             return None
         return await handler(event, data)

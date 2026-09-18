@@ -12,22 +12,6 @@ from domain_scanner.utils import normalize_domain
 
 log = get_logger(__name__)
 
-# Domain.status codes from the PWA.partners Open API (models.Domain.status).
-PWA_STATUS_ACTIVE = 1
-PWA_STATUS_LABELS: dict[int, str] = {
-    0: "создаётся",
-    1: "активен",
-    2: "ошибка создания",
-    5: "требуется настройка NS",
-    6: "выпуск сертификата",
-    7: "домен занят",
-    8: "удаляется",
-    9: "удалён",
-    10: "настройка NS",
-    11: "ошибка выпуска сертификата",
-}
-
-
 def parse_domains(items: list[dict[str, Any]]) -> list[SourceDomain]:
     """Map one page of `GET /dash_api/domains/list` onto SourceDomain."""
     result: list[SourceDomain] = []
@@ -39,13 +23,7 @@ def parse_domains(items: list[dict[str, Any]]) -> list[SourceDomain]:
         result.append(
             SourceDomain(
                 name=name,
-                is_active=status == PWA_STATUS_ACTIVE,
                 status=None if status is None else str(status),
-                status_label=(
-                    PWA_STATUS_LABELS.get(status, f"код {status}")
-                    if status is not None
-                    else None
-                ),
                 external_id=item.get("uuid") or None,
                 external_parent_id=item.get("pwa_uuid") or None,
                 raw=item,

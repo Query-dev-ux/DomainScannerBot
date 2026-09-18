@@ -33,7 +33,7 @@ async def run_sync(app: Application) -> None:
         results = await app.sync_service.run()
     except Exception:
         log.exception("job.sync.error")
-        await app.notifier.notify_text(render_job_crash("Синхронизация доменов"))
+        await app.notifier.notify_text(render_job_crash("Синхронизация"))
         return
     # Each source is isolated: one failing does not stop the others, but the group
     # should know which one is down.
@@ -60,7 +60,7 @@ async def run_scan(app: Application) -> None:
         )
     except Exception:
         log.exception("job.scan.error")
-        await app.notifier.notify_text(render_job_crash("Плановое сканирование"))
+        await app.notifier.notify_text(render_job_crash("Плановая проверка"))
 
 
 def scan_tick_minutes(scan_interval_minutes: int) -> int:

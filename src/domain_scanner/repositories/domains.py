@@ -9,17 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain_scanner.db.models import Domain, DomainSource, Verdict
 
-_MONITORED = (Domain.is_active.is_(True), Domain.monitoring_enabled.is_(True))
+# is_active = the domain is still reported by its source (see Domain.is_active).
+_PRESENT = Domain.is_active.is_(True)
+_MONITORED = (_PRESENT, Domain.monitoring_enabled.is_(True))
 
 
 @dataclass(slots=True)
 class DomainStats:
-    """Counts over monitored domains (active and not muted), plus the rest."""
+    """Counts over monitored domains, plus how many were muted by hand."""
 
     by_verdict: dict[Verdict, int] = field(default_factory=dict)
     by_source: dict[DomainSource, int] = field(default_factory=dict)
     muted: int = 0
-    inactive: int = 0
 
     @property
     def monitored(self) -> int:
@@ -41,12 +42,9 @@ class DomainRepository:
     async def list_all(self) -> Sequence[Domain]:
         return (await self._session.scalars(select(Domain).order_by(Domain.name))).all()
 
-    async def list_for_display(
-        self, verdicts: set[Verdict] | None = None, *, include_inactive: bool = False
-    ) -> Sequence[Domain]:
-        stmt = select(Domain).order_by(Domain.name)
-        if not include_inactive:
-            stmt = stmt.where(Domain.is_active.is_(True))
+    async def list_for_display(self, verdicts: set[Verdict] | None = None) -> Sequence[Domain]:
+        """Domains their sources still report (muted ones included)."""
+        stmt = select(Domain).where(_PRESENT).order_by(Domain.name)
         if verdicts is not None:
             stmt = stmt.where(Domain.current_verdict.in_(verdicts))
         return (await self._session.scalars(stmt)).all()
@@ -107,13 +105,7 @@ class DomainRepository:
             await self._session.scalar(
                 select(func.count())
                 .select_from(Domain)
-                .where(Domain.is_active.is_(True), not_(Domain.monitoring_enabled))
-            )
-            or 0
-        )
-        stats.inactive = int(
-            await self._session.scalar(
-                select(func.count()).select_from(Domain).where(not_(Domain.is_active))
+                .where(_PRESENT, not_(Domain.monitoring_enabled))
             )
             or 0
         )

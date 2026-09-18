@@ -20,7 +20,8 @@ class SyncResult:
     fetched: int = 0
     created: int = 0
     updated: int = 0
-    deactivated: int = 0
+    # No longer reported by the source — they stop being checked.
+    removed: int = 0
     # Domains another source already owns — left untouched.
     foreign: int = 0
     error: str | None = None
@@ -32,7 +33,8 @@ class SyncResult:
 
 def _apply(domain: Domain, item: SourceDomain, source: DomainSource) -> None:
     domain.source = source
-    domain.is_active = item.is_active
+    # Reported by the source = checked. The platform status is kept for reference.
+    domain.is_active = True
     domain.external_status = item.status
     domain.external_parent_id = item.external_parent_id
     if item.external_id:
@@ -42,10 +44,12 @@ def _apply(domain: Domain, item: SourceDomain, source: DomainSource) -> None:
 class DomainSyncService:
     """Pulls domain lists from every configured platform and reconciles the DB.
 
-    Each source owns its rows: a sync only updates or deactivates domains whose
-    `source` matches, so PWA.partners and UClient never switch off each other's
-    domains. Manually added domains are adopted by the first source that reports
-    them.
+    Every domain a source reports is checked. Each source owns its rows: a sync only
+    updates domains whose `source` matches, and only its own domains stop being
+    checked when they disappear from it — PWA.partners and SkakApp never touch each
+    other's domains. Manually added domains are adopted by the first source that
+    reports them, and a domain its owner dropped is taken over by any other source
+    that still reports it.
     """
 
     def __init__(self, providers: list[DomainProvider]) -> None:
@@ -74,7 +78,7 @@ class DomainSyncService:
                     fetched=result.fetched,
                     created=result.created,
                     updated=result.updated,
-                    deactivated=result.deactivated,
+                    deactivated=result.removed,
                     error=result.error,
                 )
             )
@@ -85,7 +89,7 @@ class DomainSyncService:
             fetched=result.fetched,
             created=result.created,
             updated=result.updated,
-            deactivated=result.deactivated,
+            removed=result.removed,
             foreign=result.foreign,
             error=result.error,
         )
@@ -115,7 +119,9 @@ class DomainSyncService:
                     result.created += 1
                     continue
 
-                if domain.source not in (source, DomainSource.MANUAL):
+                # Another source owns it and still reports it — leave it be. If that
+                # source has dropped it, this one takes it over so it keeps being checked.
+                if domain.source not in (source, DomainSource.MANUAL) and domain.is_active:
                     result.foreign += 1
                     continue
 
@@ -127,4 +133,4 @@ class DomainSyncService:
             for domain in rows:
                 if domain.source == source and domain.is_active and domain.id not in touched:
                     domain.is_active = False
-                    result.deactivated += 1
+                    result.removed += 1

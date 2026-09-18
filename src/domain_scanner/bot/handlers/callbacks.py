@@ -42,7 +42,7 @@ async def _recheck(
         await query.answer("Домен уже удалён из базы", show_alert=True)
         return
 
-    await query.answer("🔁 Проверяю…")
+    await query.answer("Проверяю…")
     report = await app.scanner.scan_domain(domain_id)
     if report is None:
         return
@@ -66,7 +66,7 @@ async def _toggle_monitoring(
         return
 
     await query.answer(
-        f"🔔 {name} снова в мониторинге" if enabled else f"🔕 {name}: больше не проверяю"
+        f"{name}: снова отслеживается" if enabled else f"{name}: больше не отслеживается"
     )
     if message is not None:
         # Same message, flipped button — the text of the alert stays intact.

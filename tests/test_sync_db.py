@@ -34,8 +34,8 @@ class FakeProvider:
         return list(self.domains)
 
 
-def sd(name: str, active: bool = True, **kw) -> SourceDomain:
-    return SourceDomain(name=name, is_active=active, status="ACTIVE" if active else "X", **kw)
+def sd(name: str, status: str = "ACTIVE", **kw) -> SourceDomain:
+    return SourceDomain(name=name, status=status, **kw)
 
 
 @pytest.fixture(autouse=True)
@@ -54,35 +54,56 @@ async def _domains() -> dict[str, Domain]:
 
 async def test_two_sources_create_their_own_domains():
     pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("a.com", external_id="u1")])
-    uc = FakeProvider(DomainSource.UCLIENT, "UClient", [sd("b.com", external_parent_id="p1")])
-    results = await DomainSyncService([pwa, uc]).run()
+    sk = FakeProvider(DomainSource.SKAKAPP, "SkakApp", [sd("b.com", external_parent_id="p1")])
+    results = await DomainSyncService([pwa, sk]).run()
 
     assert [r.created for r in results] == [1, 1]
     got = await _domains()
     assert got["a.com"].source is DomainSource.PWA and got["a.com"].external_id == "u1"
-    assert got["b.com"].source is DomainSource.UCLIENT
+    assert got["b.com"].source is DomainSource.SKAKAPP
     assert got["b.com"].external_parent_id == "p1"
 
 
-async def test_a_source_never_deactivates_the_other_sources_domains():
+async def test_every_reported_domain_is_checked_whatever_its_status():
+    pwa = FakeProvider(
+        DomainSource.PWA, "PWA.partners", [sd("a.com", status="1"), sd("b.com", status="9")]
+    )
+    await DomainSyncService([pwa]).run()
+    got = await _domains()
+    assert got["a.com"].is_active and got["b.com"].is_active
+    assert got["b.com"].external_status == "9"
+
+
+async def test_a_source_only_drops_its_own_domains():
     pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("a.com")])
-    uc = FakeProvider(DomainSource.UCLIENT, "UClient", [sd("b.com")])
-    service = DomainSyncService([pwa, uc])
+    sk = FakeProvider(DomainSource.SKAKAPP, "SkakApp", [sd("b.com")])
+    service = DomainSyncService([pwa, sk])
     await service.run()
 
     pwa.domains = []  # a.com disappears from PWA.partners
     results = await service.run()
 
     got = await _domains()
-    assert got["a.com"].is_active is False
+    assert got["a.com"].is_active is False  # no longer checked
     assert got["b.com"].is_active is True  # untouched by the PWA sync
-    assert results[0].deactivated == 1 and results[1].deactivated == 0
+    assert results[0].removed == 1 and results[1].removed == 0
+
+
+async def test_domain_that_comes_back_is_checked_again():
+    pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("a.com")])
+    service = DomainSyncService([pwa])
+    await service.run()
+    pwa.domains = []
+    await service.run()
+    pwa.domains = [sd("a.com")]
+    await service.run()
+    assert (await _domains())["a.com"].is_active is True
 
 
 async def test_domain_owned_by_one_source_is_left_alone_by_another():
     pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("shared.com", external_id="u1")])
-    uc = FakeProvider(DomainSource.UCLIENT, "UClient", [sd("shared.com", active=False)])
-    results = await DomainSyncService([pwa, uc]).run()
+    sk = FakeProvider(DomainSource.SKAKAPP, "SkakApp", [sd("shared.com", status="DISABLE")])
+    results = await DomainSyncService([pwa, sk]).run()
 
     got = await _domains()
     assert got["shared.com"].source is DomainSource.PWA
@@ -90,14 +111,29 @@ async def test_domain_owned_by_one_source_is_left_alone_by_another():
     assert results[1].foreign == 1
 
 
+async def test_domain_dropped_by_its_owner_is_taken_over_by_another_source():
+    pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("shared.com")])
+    sk = FakeProvider(DomainSource.SKAKAPP, "SkakApp", [sd("shared.com", external_parent_id="p")])
+    service = DomainSyncService([pwa, sk])
+    await service.run()
+
+    pwa.domains = []  # removed from PWA.partners, still live in SkakApp
+    results = await service.run()
+
+    got = await _domains()
+    assert got["shared.com"].source is DomainSource.SKAKAPP
+    assert got["shared.com"].is_active is True  # keeps being checked
+    assert results[1].foreign == 0 and results[1].updated == 1
+
+
 async def test_manual_domain_is_adopted_by_the_source_that_reports_it():
     async with session_scope() as s:
         s.add(Domain(name="m.com", source=DomainSource.MANUAL, is_active=True))
-    uc = FakeProvider(DomainSource.UCLIENT, "UClient", [sd("m.com", external_parent_id="p9")])
-    await DomainSyncService([uc]).run()
+    sk = FakeProvider(DomainSource.SKAKAPP, "SkakApp", [sd("m.com", external_parent_id="p9")])
+    await DomainSyncService([sk]).run()
 
     got = await _domains()
-    assert got["m.com"].source is DomainSource.UCLIENT
+    assert got["m.com"].source is DomainSource.SKAKAPP
     assert got["m.com"].external_parent_id == "p9"
 
 
@@ -111,8 +147,8 @@ async def test_manual_domains_are_never_deactivated_by_a_sync():
 async def test_one_failing_source_does_not_stop_the_other():
     pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("a.com")])
     pwa.fail = RuntimeError("HTTP 500")
-    uc = FakeProvider(DomainSource.UCLIENT, "UClient", [sd("b.com")])
-    results = await DomainSyncService([pwa, uc]).run()
+    sk = FakeProvider(DomainSource.SKAKAPP, "SkakApp", [sd("b.com")])
+    results = await DomainSyncService([pwa, sk]).run()
 
     assert not results[0].ok and "HTTP 500" in (results[0].error or "")
     assert results[1].ok and results[1].created == 1
@@ -120,7 +156,7 @@ async def test_one_failing_source_does_not_stop_the_other():
         logs = (await s.scalars(select(SyncLog).order_by(SyncLog.id))).all()
     assert [(log.source, log.error is None) for log in logs] == [
         (DomainSource.PWA, False),
-        (DomainSource.UCLIENT, True),
+        (DomainSource.SKAKAPP, True),
     ]
 
 
@@ -128,8 +164,8 @@ async def test_status_change_is_matched_by_external_id():
     pwa = FakeProvider(DomainSource.PWA, "PWA.partners", [sd("old.com", external_id="u1")])
     service = DomainSyncService([pwa])
     await service.run()
-    pwa.domains = [sd("old.com", external_id="u1", active=False)]
+    pwa.domains = [sd("old.com", external_id="u1", status="9")]
     await service.run()
     got = await _domains()
-    assert got["old.com"].is_active is False
-    assert got["old.com"].external_status == "X"
+    assert got["old.com"].is_active is True
+    assert got["old.com"].external_status == "9"

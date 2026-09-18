@@ -113,6 +113,6 @@ def downgrade() -> None:
     op.drop_table("scans")
     op.drop_index("ix_domains_last_scanned_at", table_name="domains")
     op.drop_table("domains")
-    bind = op.get_bind()
-    domain_source_enum.drop(bind, checkfirst=True)
-    verdict_enum.drop(bind, checkfirst=True)
+    # ENUM(create_type=False).drop() is a no-op, so drop the types explicitly.
+    op.execute("DROP TYPE IF EXISTS domain_source")
+    op.execute("DROP TYPE IF EXISTS verdict")

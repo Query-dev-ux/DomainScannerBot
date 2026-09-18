@@ -47,7 +47,7 @@ class DomainSource(str, enum.Enum):
     """Where a domain came from. Each API source owns (and may deactivate) its rows."""
 
     PWA = "pwa"
-    UCLIENT = "uclient"
+    SKAKAPP = "skakapp"
     MANUAL = "manual"
 
 
@@ -71,13 +71,15 @@ class Domain(TimestampMixin, Base):
         domain_source_enum, default=DomainSource.PWA, nullable=False
     )
 
-    # Linkage to the source platform (PWA.partners / UClient). Meaning is per source:
+    # Linkage to the source platform (PWA.partners / SkakApp). Meaning is per source:
     # external_id — the domain's own id there (if it has one), external_parent_id —
     # the owning PWA app, external_status — the raw status string/code.
     external_id: Mapped[str | None] = mapped_column(String(128))
     external_parent_id: Mapped[str | None] = mapped_column(String(128))
     external_status: Mapped[str | None] = mapped_column(String(32))
 
+    # True while the owning source still reports the domain (always True for manual
+    # ones). Domains that vanished from their source stop being checked.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     monitoring_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

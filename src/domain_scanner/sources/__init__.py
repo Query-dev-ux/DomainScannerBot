@@ -4,14 +4,14 @@ from domain_scanner.config import Settings
 from domain_scanner.logging import get_logger
 from domain_scanner.sources.base import DomainProvider, SourceDomain, SourceError, dedupe
 from domain_scanner.sources.pwa_partners import PwaPartnersProvider
-from domain_scanner.sources.uclient import UClientProvider
+from domain_scanner.sources.skakapp import SkakAppProvider
 
 __all__ = [
     "DomainProvider",
     "PwaPartnersProvider",
+    "SkakAppProvider",
     "SourceDomain",
     "SourceError",
-    "UClientProvider",
     "build_providers",
     "dedupe",
 ]
@@ -31,15 +31,15 @@ def build_providers(settings: Settings) -> list[DomainProvider]:
                 teamate_uuid=settings.pwa_teamate_uuid,
             )
         )
-    if settings.uclient_login and settings.uclient_password:
+    if settings.skakapp_login and settings.skakapp_password:
         providers.append(
-            UClientProvider(
-                base_url=settings.uclient_api_base_url,
-                login=settings.uclient_login,
-                password=settings.uclient_password,
+            SkakAppProvider(
+                base_url=settings.skakapp_api_base_url,
+                login=settings.skakapp_login,
+                password=settings.skakapp_password,
             )
         )
-    elif settings.uclient_login or settings.uclient_password:
+    elif settings.skakapp_login or settings.skakapp_password:
         # Half-configured: say so instead of silently leaving the source out.
-        log.warning("source.uclient.incomplete", need="UCLIENT_LOGIN and UCLIENT_PASSWORD")
+        log.warning("source.skakapp.incomplete", need="SKAKAPP_LOGIN and SKAKAPP_PASSWORD")
     return providers

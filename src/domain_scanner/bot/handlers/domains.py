@@ -26,9 +26,9 @@ if TYPE_CHECKING:
 
 router = Router(name="domains")
 
-_JOB_META = {
-    SYNC_JOB_ID: ("🔄", "Синхронизация доменов"),
-    SCAN_JOB_ID: ("🔍", "Проверка репутации"),
+_JOB_NAMES = {
+    SYNC_JOB_ID: "Синхронизация источников",
+    SCAN_JOB_ID: "Проверка доменов",
 }
 
 
@@ -49,14 +49,12 @@ async def cmd_status(message: Message) -> None:
 @router.message(Command("list"))
 async def cmd_list(message: Message, command: CommandObject) -> None:
     arg = (command.args or "").strip().lower()
-    include_inactive = False
     if not arg:
         verdicts: set[Verdict] | None = set(render.PROBLEM_VERDICTS)
         title = "Проблемные домены"
-        hint = "✨ Проблемных доменов нет. Все домены — /list all"
+        hint = "Проблемных доменов нет. Все домены: /list all"
     elif arg == "all":
-        verdicts, title, hint = None, "Все домены", "Доменов пока нет — /sync_now"
-        include_inactive = True
+        verdicts, title, hint = None, "Все домены", "Доменов пока нет: /sync_now"
     else:
         try:
             wanted = Verdict(arg)
@@ -69,9 +67,7 @@ async def cmd_list(message: Message, command: CommandObject) -> None:
         hint = "Таких доменов нет."
 
     async with session_scope() as session:
-        domains = await DomainRepository(session).list_for_display(
-            verdicts, include_inactive=include_inactive
-        )
+        domains = await DomainRepository(session).list_for_display(verdicts)
     await message.answer(render.render_list(domains, title, empty_hint=hint))
 
 
@@ -85,11 +81,11 @@ async def cmd_add(message: Message, command: CommandObject) -> None:
         _, created = await DomainRepository(session).add_manual(name)
     if created:
         await message.answer(
-            f"➕ <code>{render._e(name)}</code> добавлен — проверю в ближайший прогон.\n"
-            f"<i>Сразу: /check {render._e(name)}</i>"
+            f"Добавлен <code>{render._e(name)}</code>. Проверю в ближайший прогон.\n"
+            f"<i>Проверить сейчас: /check {render._e(name)}</i>"
         )
     else:
-        await message.answer(f"👌 <code>{render._e(name)}</code> уже в списке.")
+        await message.answer(f"<code>{render._e(name)}</code> уже в списке.")
 
 
 @router.message(Command("check"))
@@ -106,7 +102,7 @@ async def cmd_check(message: Message, command: CommandObject, app: Application) 
     progress = await message.answer(render.render_checking(name))
     report = await app.scanner.scan_domain(domain_id)
     if report is None:
-        await progress.edit_text("🛑 Не удалось проверить домен.")
+        await progress.edit_text("Не удалось проверить домен.")
         return
 
     await progress.edit_text(
@@ -118,7 +114,7 @@ async def cmd_check(message: Message, command: CommandObject, app: Application) 
 
 @router.message(Command("sync_now"))
 async def cmd_sync_now(message: Message, app: Application) -> None:
-    progress = await message.answer("⏳ Синхронизирую источники…")
+    progress = await message.answer("Обновляю списки из источников…")
     results = await app.sync_service.run()
     await progress.edit_text(render.render_sync(results))
 
@@ -137,8 +133,8 @@ async def cmd_scan_now(message: Message, command: CommandObject, app: Applicatio
     queue = await count_due_domains(interval)
     if not queue:
         await message.answer(
-            "✨ Очередь пуста — все домены проверены недавно.\n"
-            "<i>Следующая перепроверка — по расписанию, см. /jobs</i>"
+            "Очередь пуста: все домены проверены недавно.\n"
+            "<i>Следующая перепроверка по расписанию: /jobs</i>"
         )
         return
 
@@ -158,13 +154,13 @@ async def cmd_scan_now(message: Message, command: CommandObject, app: Applicatio
 async def cmd_jobs(message: Message, app: Application) -> None:
     jobs = []
     for job in app.scheduler.get_jobs():
-        icon, name = _JOB_META.get(job.id, ("⚙️", job.name or job.id))
+        name = _JOB_NAMES.get(job.id, job.name or job.id)
         interval = getattr(job.trigger, "interval", None)
         every = int(interval.total_seconds() // 60) if interval else 0
-        jobs.append(render.JobInfo(icon, name, every, job.next_run_time))
+        jobs.append(render.JobInfo(name, every, job.next_run_time))
 
     if not jobs:
-        await message.answer("🛑 Планировщик не зарегистрировал ни одной задачи.")
+        await message.answer("Планировщик не зарегистрировал ни одной задачи.")
         return
 
     queue = await count_due_domains(app.settings.scan_interval_minutes)
