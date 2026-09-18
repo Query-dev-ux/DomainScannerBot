@@ -195,3 +195,33 @@ def test_jobs_card_shows_local_time_and_queue():
     assert "Синхронизация источников — каждые 60 мин" in text
     assert "18.09, 12:52 MSK, через 12 мин" in text
     assert "В очереди: 4" in text
+
+
+def test_bad_list_is_plain_one_per_line():
+    (text,) = render.render_bad_list(["bad.com", "sus.io"])
+    assert text == "<pre>bad.com\nsus.io</pre>"
+
+
+def test_bad_list_empty():
+    assert render.render_bad_list([]) == ["Плохих доменов нет."]
+
+
+def test_long_bad_list_is_split_and_keeps_every_domain():
+    names = [f"{'x' * 40}{i}.com" for i in range(400)]
+    parts = render.render_bad_list(names)
+    assert len(parts) > 1
+    assert all(len(p) < 4096 for p in parts)
+    got = [n for p in parts for n in p.removeprefix("<pre>").removesuffix("</pre>").split("\n")]
+    assert got == names
+
+
+def test_bad_list_escapes_names():
+    (text,) = render.render_bad_list(["a<b>.com"])
+    assert "a&lt;b&gt;.com" in text
+
+
+def test_status_button_has_no_emoji():
+    from domain_scanner.bot.keyboards import status_keyboard
+
+    (button,) = status_keyboard().inline_keyboard[0]
+    assert button.text == "Плохие домены"

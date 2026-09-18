@@ -9,6 +9,24 @@ class DomainAction(CallbackData, prefix="dom"):
     domain_id: int
 
 
+class StatusAction(CallbackData, prefix="st"):
+    action: str  # "bad"
+
+
+def status_keyboard() -> InlineKeyboardMarkup:
+    """Button under /status that sends the bad domains as a plain list."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Плохие домены",
+                    callback_data=StatusAction(action="bad").pack(),
+                )
+            ]
+        ]
+    )
+
+
 def domain_keyboard(domain_id: int, *, monitoring_enabled: bool = True) -> InlineKeyboardMarkup:
     """Buttons under an alert or a /check card."""
     toggle = (

@@ -8,7 +8,7 @@ from aiogram.types import CallbackQuery, Message
 
 from domain_scanner.bot import render
 from domain_scanner.bot.handlers.domains import alert_if_needed
-from domain_scanner.bot.keyboards import DomainAction, domain_keyboard
+from domain_scanner.bot.keyboards import DomainAction, StatusAction, domain_keyboard
 from domain_scanner.db import session_scope
 from domain_scanner.repositories import DomainRepository
 
@@ -16,6 +16,16 @@ if TYPE_CHECKING:
     from domain_scanner.app import Application
 
 router = Router(name="callbacks")
+
+
+@router.callback_query(StatusAction.filter(lambda data: data.action == "bad"))
+async def on_bad_list(query: CallbackQuery) -> None:
+    async with session_scope() as session:
+        names = await DomainRepository(session).bad_domain_names()
+    await query.answer()
+    if isinstance(query.message, Message):
+        for text in render.render_bad_list(names):
+            await query.message.answer(text)
 
 
 @router.callback_query(DomainAction.filter())

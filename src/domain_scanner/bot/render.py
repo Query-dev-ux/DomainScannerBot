@@ -183,6 +183,23 @@ def render_list(domains: Sequence[Domain], title: str, *, empty_hint: str) -> st
     return "\n".join(lines)
 
 
+def render_bad_list(names: Sequence[str]) -> list[str]:
+    """Bad domains as a plain list, one per line, in a <pre> block so the whole
+    list copies in one tap. Split into several messages if it is long."""
+    if not names:
+        return ["Плохих доменов нет."]
+    chunks: list[list[str]] = [[]]
+    size = 0
+    for name in names:
+        line = _e(name)
+        if chunks[-1] and size + len(line) + 1 > MESSAGE_BUDGET:
+            chunks.append([])
+            size = 0
+        chunks[-1].append(line)
+        size += len(line) + 1
+    return ["<pre>" + "\n".join(chunk) + "</pre>" for chunk in chunks]
+
+
 # ── /jobs ────────────────────────────────────────────────────────────────────
 
 
