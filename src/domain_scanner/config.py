@@ -26,10 +26,11 @@ class Settings(BaseSettings):
     pwa_api_key: str | None = None
     pwa_team_uuid: str | None = None
     pwa_teamate_uuid: str | None = None
-    # UClient (skakapp) API, HTTP Basic auth
+    # UClient (skakapp) API — HTTP Basic auth with the account login and password.
+    # (UClient also issues an API key; this API does not use it.)
     uclient_api_base_url: str = "https://uclient.skakapp.com/api"
-    uclient_api_key: str | None = None
-    uclient_api_password: str = ""
+    uclient_login: str | None = None
+    uclient_password: str | None = None
 
     # Checkers
     gsb_api_key: str | None = None

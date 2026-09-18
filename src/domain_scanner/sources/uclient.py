@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 import aiohttp
@@ -20,6 +21,12 @@ UCLIENT_STATUS_LABELS: dict[str, str] = {
     "DISABLE_BALANCE": "выключена (баланс)",
     "ARCHIVE": "в архиве",
 }
+
+def basic_auth_header(login: str, password: str) -> str:
+    # Built by hand: aiohttp.BasicAuth is deprecated and goes away in aiohttp 4.
+    token = base64.b64encode(f"{login}:{password}".encode()).decode("ascii")
+    return f"Basic {token}"
+
 
 # How a domain is attached to its PWA — shown next to the status.
 _ROLE_LABELS = {"main": "", "ext": "доп. домен", "split": "сплит"}
@@ -73,8 +80,8 @@ def parse_pwas(pwas: list[dict[str, Any]]) -> list[SourceDomain]:
 class UClientProvider:
     """UClient (skakapp) API — https://uclient.skakapp.com/api-docs/.
 
-    HTTP Basic auth. The backend is Yii2, where the API key normally goes in as the
-    username with an empty password; both are configurable.
+    HTTP Basic auth with the account login and password — verified against the live
+    API; the separate UClient API key is rejected here and is not needed.
     """
 
     source = DomainSource.UCLIENT
@@ -83,14 +90,17 @@ class UClientProvider:
     def __init__(
         self,
         base_url: str,
-        api_key: str,
-        password: str = "",
+        login: str,
+        password: str,
         *,
         timeout: float = 30.0,
         page_size: int = 500,
     ) -> None:
         self._base_url = base_url.rstrip("/")
-        self._auth = aiohttp.BasicAuth(api_key, password)
+        self._headers = {
+            "Authorization": basic_auth_header(login, password),
+            "Accept": "application/json",
+        }
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._page_size = page_size
 
@@ -107,8 +117,8 @@ class UClientProvider:
             text = await resp.text()
             if resp.status == 401:
                 raise SourceError(
-                    "HTTP 401: UClient не принял ключ — проверьте UCLIENT_API_KEY "
-                    "(и UCLIENT_API_PASSWORD, если он нужен)"
+                    "HTTP 401: UClient не принял логин/пароль — проверьте "
+                    "UCLIENT_LOGIN и UCLIENT_PASSWORD"
                 )
             if resp.status >= 400:
                 raise SourceError(f"POST {path} → HTTP {resp.status}: {text[:300]}")
@@ -120,9 +130,7 @@ class UClientProvider:
     async def fetch_domains(self) -> list[SourceDomain]:
         collected: list[SourceDomain] = []
         async with aiohttp.ClientSession(
-            auth=self._auth,
-            timeout=self._timeout,
-            headers={"Accept": "application/json"},
+            timeout=self._timeout, headers=self._headers
         ) as session:
             page = 1
             while True:

@@ -32,7 +32,7 @@ UClient ──────┘              │
 | Источник | Ключи | Откуда берутся домены | Активен, если |
 |---|---|---|---|
 | PWA.partners | `PWA_API_KEY`, `PWA_TEAM_UUID`, `PWA_TEAMATE_UUID` | `GET /dash_api/domains/list` | `status = 1` |
-| UClient (skakapp) | `UCLIENT_API_KEY` (+ `UCLIENT_API_PASSWORD`) | `POST /pwa/list`: основной домен, `extDomains` и домены сплитов | PWA в статусе `ACTIVE` |
+| UClient (skakapp) | `UCLIENT_LOGIN` + `UCLIENT_PASSWORD` (Basic-auth; API-ключ UClient не нужен) | `POST /pwa/list`: основной домен, `extDomains` и домены сплитов | PWA в статусе `ACTIVE` |
 
 У каждого домена в базе есть владелец (`domains.source`). Синк источника обновляет и
 выключает **только свои** домены — PWA.partners никогда не отключит домен UClient и

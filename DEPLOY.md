@@ -51,7 +51,7 @@ nano .env
 | `ALERT_CHAT_ID` | id группы для алертов (для супергруппы — вида `-100…`) |
 | `ADMIN_IDS` | ваши Telegram user id через запятую |
 | `PWA_API_KEY`, `PWA_TEAM_UUID`, `PWA_TEAMATE_UUID` | источник PWA.partners (пусто — источник отключён) |
-| `UCLIENT_API_KEY` | источник UClient (пусто — отключён). Ключ идёт логином Basic-auth; если UClient выдал ещё и пароль — `UCLIENT_API_PASSWORD` |
+| `UCLIENT_LOGIN`, `UCLIENT_PASSWORD` | источник UClient: логин и пароль (Basic-auth). Нужны оба, иначе источник отключён. API-ключ UClient этому API не нужен |
 | `GSB_API_KEY` | ключ Google Safe Browsing (можно оставить пустым — чекер отключится) |
 | `FB_APP_ID`, `FB_APP_SECRET` | проверка блокировки домена в Facebook (см. ниже; пусто — чекер отключится) |
 | `POSTGRES_PASSWORD` | придумать надёжный пароль |

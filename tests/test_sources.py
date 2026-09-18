@@ -67,3 +67,30 @@ def test_dedupe_prefers_active_occurrence():
     got = {d.name: d for d in dedupe(items)}
     assert set(got) == {"x.com", "y.com"}
     assert got["x.com"].is_active and got["x.com"].external_parent_id == "live"
+
+
+def _settings(**kw):
+    from domain_scanner.config import Settings
+
+    base = dict(_env_file=None, bot_token="1:A", alert_chat_id=-1, postgres_password="p")
+    return Settings(**base, **kw)
+
+
+def test_uclient_needs_login_and_password():
+    from domain_scanner.sources import build_providers
+
+    both = build_providers(_settings(uclient_login="me", uclient_password="pw"))
+    assert [p.title for p in both] == ["UClient"]
+    assert build_providers(_settings(uclient_login="me")) == []
+    assert build_providers(_settings(uclient_password="pw")) == []
+
+
+def test_uclient_sends_login_and_password_as_basic_auth():
+    import base64
+
+    from domain_scanner.sources import UClientProvider
+
+    header = UClientProvider("https://x/api", login="me", password="p:w")._headers["Authorization"]
+    scheme, token = header.split(" ", 1)
+    assert scheme == "Basic"
+    assert base64.b64decode(token).decode() == "me:p:w"
