@@ -8,12 +8,11 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from domain_scanner.bot import render
-from domain_scanner.bot.keyboards import domain_keyboard, status_keyboard
+from domain_scanner.bot.keyboards import domain_keyboard
 from domain_scanner.db import session_scope
 from domain_scanner.db.models import Verdict
 from domain_scanner.labels import VERDICT_RU
 from domain_scanner.repositories import DomainRepository
-from domain_scanner.repositories.domains import BAD_VERDICTS
 from domain_scanner.scheduler.jobs import SCAN_JOB_ID, SYNC_JOB_ID
 from domain_scanner.services.scanner import (
     ScanReport,
@@ -44,10 +43,7 @@ async def alert_if_needed(app: Application, report: ScanReport, chat_id: int) ->
 async def cmd_status(message: Message) -> None:
     async with session_scope() as session:
         stats = await DomainRepository(session).stats()
-    has_bad = any(stats.by_verdict.get(v) for v in BAD_VERDICTS)
-    await message.answer(
-        render.render_status(stats), reply_markup=status_keyboard() if has_bad else None
-    )
+    await message.answer(render.render_status(stats))
 
 
 @router.message(Command("list"))

@@ -169,22 +169,3 @@ async def test_status_change_is_matched_by_external_id():
     got = await _domains()
     assert got["old.com"].is_active is True
     assert got["old.com"].external_status == "9"
-
-
-async def test_bad_domain_names_match_status_population_worst_first():
-    from domain_scanner.db.models import Verdict
-    from domain_scanner.repositories import DomainRepository
-
-    async with session_scope() as s:
-        s.add_all([
-            Domain(name="s.com", current_verdict=Verdict.SUSPICIOUS),
-            Domain(name="f.com", current_verdict=Verdict.FLAGGED),
-            Domain(name="a-flag.com", current_verdict=Verdict.FLAGGED),
-            Domain(name="ok.com", current_verdict=Verdict.CLEAN),
-            Domain(name="err.com", current_verdict=Verdict.ERROR),
-            Domain(name="muted.com", current_verdict=Verdict.FLAGGED, monitoring_enabled=False),
-            Domain(name="gone.com", current_verdict=Verdict.FLAGGED, is_active=False),
-        ])
-    async with session_scope() as s:
-        names = await DomainRepository(s).bad_domain_names()
-    assert names == ["a-flag.com", "f.com", "s.com"]

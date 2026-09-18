@@ -13,9 +13,6 @@ from domain_scanner.db.models import Domain, DomainSource, Verdict
 _PRESENT = Domain.is_active.is_(True)
 _MONITORED = (_PRESENT, Domain.monitoring_enabled.is_(True))
 
-# What the bot calls a bad domain.
-BAD_VERDICTS = (Verdict.FLAGGED, Verdict.SUSPICIOUS)
-
 
 @dataclass(slots=True)
 class DomainStats:
@@ -91,21 +88,6 @@ class DomainRepository:
         if domain is not None:
             domain.monitoring_enabled = enabled
         return domain
-
-    async def bad_domain_names(self) -> list[str]:
-        """Monitored domains marked bad (зашкварен / подозрительно), worst first.
-
-        Same population as the /status counts, so the list matches the summary.
-        """
-        rows = await self._session.execute(
-            select(Domain.name, Domain.current_verdict).where(
-                *_MONITORED, Domain.current_verdict.in_(BAD_VERDICTS)
-            )
-        )
-        return [
-            name
-            for name, _ in sorted(rows, key=lambda r: (-r[1].severity, r[0]))
-        ]
 
     async def stats(self) -> DomainStats:
         stats = DomainStats()
