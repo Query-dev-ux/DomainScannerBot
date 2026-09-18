@@ -38,17 +38,15 @@ async def cmd_status(message: Message) -> None:
 async def cmd_list(message: Message, command: CommandObject) -> None:
     arg = (command.args or "").strip().lower()
     if not arg:
-        verdicts: set[Verdict] | None = set(render.PROBLEM_VERDICTS)
+        verdicts = set(render.PROBLEM_VERDICTS)
         title = "Проблемные домены"
-        hint = "Проблемных доменов нет. Все домены: /list all"
-    elif arg == "all":
-        verdicts, title, hint = None, "Все домены", "Доменов пока нет: /sync_now"
+        hint = "Проблемных доменов нет."
     else:
         try:
             wanted = Verdict(arg)
         except ValueError:
             options = " · ".join(f"<code>{v.value}</code>" for v in Verdict)
-            await message.answer(f"Не знаю такой фильтр. Можно: <code>all</code> · {options}")
+            await message.answer(f"Не знаю такой фильтр. Можно: {options}")
             return
         verdicts = {wanted}
         title = VERDICT_RU[wanted].capitalize()
