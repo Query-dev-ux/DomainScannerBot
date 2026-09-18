@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from domain_scanner.bot.handlers.domains import _normalize_domain
+from domain_scanner.utils import normalize_domain as _normalize_domain
 
 
 @pytest.mark.parametrize(

@@ -44,7 +44,10 @@ _VERDICT_SEVERITY = {
 
 
 class DomainSource(str, enum.Enum):
+    """Where a domain came from. Each API source owns (and may deactivate) its rows."""
+
     PWA = "pwa"
+    UCLIENT = "uclient"
     MANUAL = "manual"
 
 
@@ -59,6 +62,7 @@ class Domain(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("name", name="uq_domains_name"),
         Index("ix_domains_last_scanned_at", "last_scanned_at"),
+        Index("ix_domains_source_external_id", "source", "external_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -67,10 +71,12 @@ class Domain(TimestampMixin, Base):
         domain_source_enum, default=DomainSource.PWA, nullable=False
     )
 
-    # PWA.partners linkage
-    pwa_uuid: Mapped[str | None] = mapped_column(String(64), unique=True)
-    pwa_status: Mapped[int | None] = mapped_column()
-    pwa_pwa_uuid: Mapped[str | None] = mapped_column(String(64))
+    # Linkage to the source platform (PWA.partners / UClient). Meaning is per source:
+    # external_id — the domain's own id there (if it has one), external_parent_id —
+    # the owning PWA app, external_status — the raw status string/code.
+    external_id: Mapped[str | None] = mapped_column(String(128))
+    external_parent_id: Mapped[str | None] = mapped_column(String(128))
+    external_status: Mapped[str | None] = mapped_column(String(32))
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     monitoring_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -119,6 +125,7 @@ class ScanCheck(Base):
     """Result of one checker within a scan."""
 
     __tablename__ = "scan_checks"
+    __table_args__ = (Index("ix_scan_checks_scan_id", "scan_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     scan_id: Mapped[int] = mapped_column(
@@ -137,11 +144,12 @@ class ScanCheck(Base):
 
 
 class SyncLog(Base):
-    """Audit trail for PWA domain-list synchronisations."""
+    """Audit trail for domain-list synchronisations, one row per source run."""
 
     __tablename__ = "sync_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[DomainSource | None] = mapped_column(domain_source_enum)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     fetched: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)

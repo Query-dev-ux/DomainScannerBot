@@ -4,26 +4,12 @@ from aiogram import Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 
-router = Router(name="common")
+from domain_scanner.bot.render import render_help
 
-HELP_TEXT = (
-    "<b>DomainScannerBot</b> — мониторинг репутации доменов.\n\n"
-    "<b>Команды:</b>\n"
-    "/status — сводка по статусам доменов\n"
-    "/list [clean|suspicious|flagged] — список доменов\n"
-    "/check &lt;домен&gt; — проверить домен прямо сейчас\n"
-    "/add &lt;домен&gt; — добавить домен вручную\n"
-    "/jobs — расписание автопроверок и очередь\n"
-    "/scan_now [N] — запустить сканирование сейчас\n"
-    "/sync_now — подтянуть домены из PWA API\n"
-)
+router = Router(name="common")
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message) -> None:
-    await message.answer(HELP_TEXT)
-
-
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    await message.answer(HELP_TEXT)
+    await message.answer(render_help())

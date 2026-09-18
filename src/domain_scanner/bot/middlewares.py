@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from aiogram import BaseMiddleware
-from aiogram.types import Message, TelegramObject
+from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from domain_scanner.logging import get_logger
 
@@ -27,6 +27,8 @@ class AdminOnlyMiddleware(BaseMiddleware):
         if user is not None and self._admin_ids and user.id not in self._admin_ids:
             if isinstance(event, Message):
                 await event.answer("⛔ Нет доступа.")
+            elif isinstance(event, CallbackQuery):
+                await event.answer("⛔ Нет доступа", show_alert=True)
             log.warning("bot.access_denied", user_id=user.id)
             return None
         return await handler(event, data)

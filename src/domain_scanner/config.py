@@ -20,11 +20,16 @@ class Settings(BaseSettings):
     # Comma-separated list of Telegram user IDs in the env; empty = allow everyone.
     admin_ids: str = ""
 
+    # Domain sources — each one is enabled when its credentials are set.
     # PWA.partners Open API
     pwa_api_base_url: str = "https://openapi.pwa.partners/api"
-    pwa_api_key: str
-    pwa_team_uuid: str
+    pwa_api_key: str | None = None
+    pwa_team_uuid: str | None = None
     pwa_teamate_uuid: str | None = None
+    # UClient (skakapp) API, HTTP Basic auth
+    uclient_api_base_url: str = "https://uclient.skakapp.com/api"
+    uclient_api_key: str | None = None
+    uclient_api_password: str = ""
 
     # Checkers
     gsb_api_key: str | None = None
@@ -46,6 +51,9 @@ class Settings(BaseSettings):
     # Max domains one scheduled scan run handles, so a large backlog is drained
     # over several runs instead of bursting into external API rate limits.
     scan_batch_size: int = 50
+
+    # Timezone used for times shown in Telegram messages (IANA name).
+    display_timezone: str = "UTC"
 
     log_level: str = "INFO"
 

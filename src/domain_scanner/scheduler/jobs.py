@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from domain_scanner.bot.render import render_job_crash, render_sync_failure
 from domain_scanner.logging import get_logger
 from domain_scanner.services.scanner import collect_due_domain_ids, count_due_domains
 
@@ -29,10 +30,15 @@ MISFIRE_GRACE_SECONDS = 600
 async def run_sync(app: Application) -> None:
     log.info("job.sync.start")
     try:
-        await app.sync_service.run()
+        results = await app.sync_service.run()
     except Exception:
         log.exception("job.sync.error")
-        await app.notifier.notify_text("🛑 Синхронизация доменов с PWA API упала. См. логи.")
+        await app.notifier.notify_text(render_job_crash("Синхронизация доменов"))
+        return
+    # Each source is isolated: one failing does not stop the others, but the group
+    # should know which one is down.
+    if any(not r.ok for r in results):
+        await app.notifier.notify_text(render_sync_failure(results))
 
 
 async def run_scan(app: Application) -> None:
@@ -54,7 +60,7 @@ async def run_scan(app: Application) -> None:
         )
     except Exception:
         log.exception("job.scan.error")
-        await app.notifier.notify_text("🛑 Плановое сканирование доменов упало. См. логи.")
+        await app.notifier.notify_text(render_job_crash("Плановое сканирование"))
 
 
 def scan_tick_minutes(scan_interval_minutes: int) -> int:

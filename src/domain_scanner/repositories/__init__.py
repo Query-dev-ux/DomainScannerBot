@@ -1,3 +1,3 @@
-from domain_scanner.repositories.domains import DomainRepository
+from domain_scanner.repositories.domains import DomainRepository, DomainStats
 
-__all__ = ["DomainRepository"]
+__all__ = ["DomainRepository", "DomainStats"]

@@ -1,42 +1,60 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain_scanner.db.models import Domain, DomainSource, Verdict
+
+_MONITORED = (Domain.is_active.is_(True), Domain.monitoring_enabled.is_(True))
+
+
+@dataclass(slots=True)
+class DomainStats:
+    """Counts over monitored domains (active and not muted), plus the rest."""
+
+    by_verdict: dict[Verdict, int] = field(default_factory=dict)
+    by_source: dict[DomainSource, int] = field(default_factory=dict)
+    muted: int = 0
+    inactive: int = 0
+
+    @property
+    def monitored(self) -> int:
+        return sum(self.by_verdict.values())
 
 
 class DomainRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def get(self, domain_id: int) -> Domain | None:
+        return await self._session.get(Domain, domain_id)
+
     async def get_by_name(self, name: str) -> Domain | None:
         return await self._session.scalar(
             select(Domain).where(Domain.name == name.strip().lower())
         )
 
-    async def get_by_pwa_uuid(self, uuid: str) -> Domain | None:
-        return await self._session.scalar(select(Domain).where(Domain.pwa_uuid == uuid))
-
     async def list_all(self) -> Sequence[Domain]:
         return (await self._session.scalars(select(Domain).order_by(Domain.name))).all()
 
-    async def list_monitored(self) -> Sequence[Domain]:
-        stmt = (
-            select(Domain)
-            .where(Domain.monitoring_enabled.is_(True), Domain.is_active.is_(True))
-            .order_by(Domain.last_scanned_at.asc().nulls_first())
-        )
+    async def list_for_display(
+        self, verdicts: set[Verdict] | None = None, *, include_inactive: bool = False
+    ) -> Sequence[Domain]:
+        stmt = select(Domain).order_by(Domain.name)
+        if not include_inactive:
+            stmt = stmt.where(Domain.is_active.is_(True))
+        if verdicts is not None:
+            stmt = stmt.where(Domain.current_verdict.in_(verdicts))
         return (await self._session.scalars(stmt)).all()
 
     def _due_filter(self, older_than: timedelta):
         cutoff = datetime.now(UTC) - older_than
         return (
-            Domain.monitoring_enabled.is_(True),
-            Domain.is_active.is_(True),
+            *_MONITORED,
             or_(Domain.last_scanned_at.is_(None), Domain.last_scanned_at < cutoff),
         )
 
@@ -67,8 +85,36 @@ class DomainRepository:
         await self._session.flush()
         return domain, True
 
-    async def counts_by_verdict(self) -> dict[Verdict, int]:
+    async def set_monitoring(self, domain_id: int, enabled: bool) -> Domain | None:
+        domain = await self.get(domain_id)
+        if domain is not None:
+            domain.monitoring_enabled = enabled
+        return domain
+
+    async def stats(self) -> DomainStats:
+        stats = DomainStats()
         rows = await self._session.execute(
-            select(Domain.current_verdict, func.count()).group_by(Domain.current_verdict)
+            select(Domain.current_verdict, func.count())
+            .where(*_MONITORED)
+            .group_by(Domain.current_verdict)
         )
-        return {verdict: count for verdict, count in rows}
+        stats.by_verdict = {v: n for v, n in rows}
+        rows = await self._session.execute(
+            select(Domain.source, func.count()).where(*_MONITORED).group_by(Domain.source)
+        )
+        stats.by_source = {s: n for s, n in rows}
+        stats.muted = int(
+            await self._session.scalar(
+                select(func.count())
+                .select_from(Domain)
+                .where(Domain.is_active.is_(True), not_(Domain.monitoring_enabled))
+            )
+            or 0
+        )
+        stats.inactive = int(
+            await self._session.scalar(
+                select(func.count()).select_from(Domain).where(not_(Domain.is_active))
+            )
+            or 0
+        )
+        return stats

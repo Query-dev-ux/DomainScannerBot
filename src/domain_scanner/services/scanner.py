@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from domain_scanner.checkers.base import Checker, CheckOutcome
 from domain_scanner.db import session_scope
-from domain_scanner.db.models import Domain, Scan, ScanCheck, Verdict
+from domain_scanner.db.models import Domain, DomainSource, Scan, ScanCheck, Verdict
 from domain_scanner.logging import get_logger
 from domain_scanner.repositories import DomainRepository
 
@@ -27,6 +27,9 @@ class ScanReport:
     previous_verdict: Verdict
     changed: bool
     outcomes: list[CheckOutcome] = field(default_factory=list)
+    domain_id: int | None = None
+    source: DomainSource | None = None
+    finished_at: datetime | None = None
 
     @property
     def worsened(self) -> bool:
@@ -62,6 +65,7 @@ class ScannerService:
             if domain is None:
                 return None
             name = domain.name
+            source = domain.source
             previous = domain.current_verdict
             started = datetime.now(UTC)
 
@@ -103,6 +107,9 @@ class ScannerService:
             previous_verdict=previous,
             changed=verdict != previous,
             outcomes=outcomes,
+            domain_id=domain_id,
+            source=source,
+            finished_at=finished,
         )
         log.info(
             "scan.done",

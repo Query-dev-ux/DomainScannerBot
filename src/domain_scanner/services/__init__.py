@@ -1,5 +1,4 @@
-from domain_scanner.services.notifier import Notifier
 from domain_scanner.services.scanner import ScannerService, ScanReport
-from domain_scanner.services.sync import DomainSyncService
+from domain_scanner.services.sync import DomainSyncService, SyncResult
 
-__all__ = ["DomainSyncService", "Notifier", "ScanReport", "ScannerService"]
+__all__ = ["DomainSyncService", "ScanReport", "ScannerService", "SyncResult"]

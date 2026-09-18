@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from aiogram import Dispatcher
 
-from domain_scanner.bot.handlers import common, domains
+from domain_scanner.bot.handlers import callbacks, common, domains
 from domain_scanner.bot.middlewares import AdminOnlyMiddleware
 
 if TYPE_CHECKING:
@@ -21,4 +21,5 @@ def build_dispatcher(app: Application) -> Dispatcher:
 
     dp.include_router(common.router)
     dp.include_router(domains.router)
+    dp.include_router(callbacks.router)
     return dp

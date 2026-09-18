@@ -19,7 +19,7 @@
 ## Требования
 
 - Docker Engine 24+ и плагин Compose v2 (`docker compose version`)
-- Исходящий HTTPS к `api.telegram.org`, `openapi.pwa.partners`,
+- Исходящий HTTPS к `api.telegram.org`, `openapi.pwa.partners`, `uclient.skakapp.com`,
   `safebrowsing.googleapis.com`, `graph.facebook.com`
 - ~300 МБ RAM и немного диска под Postgres
 
@@ -50,10 +50,12 @@ nano .env
 | `BOT_TOKEN` | токен бота от @BotFather |
 | `ALERT_CHAT_ID` | id группы для алертов (для супергруппы — вида `-100…`) |
 | `ADMIN_IDS` | ваши Telegram user id через запятую |
-| `PWA_API_KEY`, `PWA_TEAM_UUID` | доступ к PWA.partners Open API |
+| `PWA_API_KEY`, `PWA_TEAM_UUID`, `PWA_TEAMATE_UUID` | источник PWA.partners (пусто — источник отключён) |
+| `UCLIENT_API_KEY` | источник UClient (пусто — отключён). Ключ идёт логином Basic-auth; если UClient выдал ещё и пароль — `UCLIENT_API_PASSWORD` |
 | `GSB_API_KEY` | ключ Google Safe Browsing (можно оставить пустым — чекер отключится) |
 | `FB_APP_ID`, `FB_APP_SECRET` | проверка блокировки домена в Facebook (см. ниже; пусто — чекер отключится) |
 | `POSTGRES_PASSWORD` | придумать надёжный пароль |
+| `DISPLAY_TIMEZONE` | часовой пояс времени в сообщениях, например `Europe/Moscow` (по умолчанию `UTC`) |
 
 `POSTGRES_HOST=db` и `POSTGRES_PORT=5432` менять не нужно — это адрес контейнера
 внутри сети проекта.
@@ -92,8 +94,9 @@ docker compose ps
 docker compose logs -f bot
 ```
 
-Признак успеха — в логах `app.started` и сообщение «🟢 DomainScannerBot запущен» в
-группе. Проверьте команды: `/status`, затем `/sync_now` (подтянет домены из PWA API).
+Признак успеха — в логах `app.started` и сообщение «🟢 DomainScannerBot в строю» в
+группе — в нём перечислены подключённые источники и проверки. Проверьте команды:
+`/status`, затем `/sync_now` (подтянет домены из всех источников).
 
 Автоматический режим включается сам: через 30 сек после старта пройдёт первая
 синхронизация, через 2 мин — первое сканирование. Убедиться, что задания
@@ -120,6 +123,16 @@ git pull
 docker compose up -d --build      # migrate прогонится автоматически заново
 docker image prune -f             # убрать старые слои
 ```
+
+Миграции применяются сервисом `migrate` до старта бота. Проверить, что база на
+последней версии:
+
+```bash
+docker compose run --rm migrate alembic current    # должно быть: 0002 (head)
+```
+
+> Перед обновлением, которое несёт миграцию схемы, сделайте бэкап (раздел ниже) —
+> так откат займёт минуту, даже если что-то пойдёт не так.
 
 ## 6. Бэкап базы
 

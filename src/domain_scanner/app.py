@@ -2,58 +2,84 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import UTC, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand, LinkPreviewOptions
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from domain_scanner.bot import build_dispatcher
+from domain_scanner.bot.dispatcher import build_dispatcher
+from domain_scanner.bot.notifier import Notifier
+from domain_scanner.bot.render import BOT_COMMANDS, render_startup
 from domain_scanner.checkers import build_checkers
-from domain_scanner.clients.pwa_partners import PwaPartnersClient
 from domain_scanner.config import Settings, get_settings
 from domain_scanner.db import init_engine, shutdown_engine
 from domain_scanner.logging import configure_logging, get_logger
 from domain_scanner.scheduler import register_jobs
-from domain_scanner.services import DomainSyncService, Notifier, ScannerService
+from domain_scanner.services import DomainSyncService, ScannerService
+from domain_scanner.sources import build_providers
 
 log = get_logger(__name__)
+
+
+def _load_timezone(name: str) -> tzinfo:
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        log.warning("app.bad_timezone", display_timezone=name, fallback="UTC")
+        return UTC
 
 
 class Application:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.tz = _load_timezone(settings.display_timezone)
         self.bot = Bot(
             token=settings.bot_token,
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+            default=DefaultBotProperties(
+                parse_mode=ParseMode.HTML,
+                link_preview=LinkPreviewOptions(is_disabled=True),
+            ),
         )
         self.notifier = Notifier(
-            self.bot, settings.alert_chat_id, settings.alert_thread_id
+            self.bot, settings.alert_chat_id, settings.alert_thread_id, tz=self.tz
         )
         self.scanner = ScannerService(
             build_checkers(settings), concurrency=settings.scan_concurrency
         )
-        self.sync_service = DomainSyncService(self._pwa_client_factory)
+        self.sync_service = DomainSyncService(build_providers(settings))
         self.scheduler = AsyncIOScheduler(timezone="UTC")
         self.dp = build_dispatcher(self)
 
-    def _pwa_client_factory(self) -> PwaPartnersClient:
-        s = self.settings
-        return PwaPartnersClient(
-            base_url=s.pwa_api_base_url,
-            api_key=s.pwa_api_key,
-            team_uuid=s.pwa_team_uuid,
-            teamate_uuid=s.pwa_teamate_uuid,
-        )
+    async def _set_commands(self) -> None:
+        # Populates the "Menu" button in Telegram clients.
+        with contextlib.suppress(Exception):
+            await self.bot.set_my_commands(
+                [BotCommand(command=c, description=d) for c, d in BOT_COMMANDS]
+            )
 
     async def run(self) -> None:
         init_engine(self.settings.database_url)
 
         register_jobs(self.scheduler, self)
         self.scheduler.start()
-        log.info("app.started", checkers=[c.name for c in self.scanner.checkers])
 
-        await self.notifier.notify_text("🟢 DomainScannerBot запущен.")
+        sources = [p.title for p in self.sync_service.providers]
+        checkers = [c.name for c in self.scanner.checkers]
+        log.info("app.started", sources=sources, checkers=checkers)
+
+        await self._set_commands()
+        await self.notifier.notify_text(
+            render_startup(
+                sources,
+                checkers,
+                self.settings.sync_interval_minutes,
+                self.settings.scan_interval_minutes,
+            )
+        )
         try:
             await self.dp.start_polling(self.bot, handle_signals=True)
         finally:
