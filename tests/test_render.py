@@ -9,7 +9,7 @@ from domain_scanner.bot import render
 from domain_scanner.bot.keyboards import domain_keyboard
 from domain_scanner.checkers.base import CheckOutcome
 from domain_scanner.db.models import Domain, DomainSource, Verdict
-from domain_scanner.repositories.domains import DomainStats
+from domain_scanner.repositories.domains import DomainStats, DomainWithChecks
 from domain_scanner.services.scanner import ScanReport
 from domain_scanner.services.sync import SyncResult
 
@@ -35,10 +35,10 @@ def _report(**kw) -> ScanReport:
     return ScanReport(**base)
 
 
-def _domain(name: str, verdict: Verdict = Verdict.CLEAN, **kw) -> Domain:
+def _domain(name: str, verdict: Verdict = Verdict.CLEAN, checks=None, **kw) -> DomainWithChecks:
     base = dict(source=DomainSource.PWA, is_active=True, monitoring_enabled=True)
     base.update(kw)
-    return Domain(name=name, current_verdict=verdict, **base)
+    return DomainWithChecks(Domain(name=name, current_verdict=verdict, **base), checks or {})
 
 
 def _every_message() -> list[str]:
@@ -59,7 +59,11 @@ def _every_message() -> list[str]:
         render.render_checking("a.com"),
         render.render_status(stats),
         render.render_status(DomainStats()),
-        render.render_list([_domain("a.com", Verdict.FLAGGED)], "Проблемные", empty_hint="—"),
+        render.render_list(
+            [_domain("a.com", Verdict.FLAGGED, {"source_status": Verdict.FLAGGED})],
+            "Проблемные домены",
+            empty_hint="—",
+        ),
         render.render_sync(sync),
         render.render_sync([]),
         render.render_sync_failure(sync),
@@ -148,27 +152,72 @@ def test_domain_count_plural(n: int, word: str):
     assert render._domains(n) == f"{n} {word}"
 
 
-def test_list_groups_worst_first():
-    domains = [
-        _domain("ok.com"),
-        _domain("bad.com", Verdict.FLAGGED, source=DomainSource.SKAKAPP, monitoring_enabled=False),
+def test_list_groups_by_source_in_order():
+    items = [
+        _domain("b.com", Verdict.SUSPICIOUS, source=DomainSource.SKAKAPP),
+        _domain("a.com", Verdict.SUSPICIOUS, source=DomainSource.PWA),
+        _domain("m.com", Verdict.SUSPICIOUS, source=DomainSource.MANUAL),
     ]
-    text = render.render_list(domains, "Все домены", empty_hint="—")
-    assert text.index("bad.com") < text.index("ok.com")
-    assert "отслежива" not in text
+    text = render.render_list(items, "Проблемные домены", empty_hint="—")
+    assert text.split("\n")[0] == "<b>Проблемные домены</b> · 3"
+    pwa, skak, manual = (
+        text.index(f"<b>{name}</b>") for name in ("PWApartners", "SkakApp", "вручную")
+    )
+    assert pwa < skak < manual
+    assert text.index("a.com") < text.index("b.com")
+
+
+def test_tags_name_the_actual_problem():
+    banned_in_source = _domain(
+        "s.com", Verdict.FLAGGED, {"source_status": Verdict.FLAGGED, "dns_rbl": Verdict.CLEAN}
+    )
+    banned_in_fb = _domain("f.com", Verdict.FLAGGED, {"facebook": Verdict.FLAGGED})
+    both = _domain(
+        "sf.com", Verdict.FLAGGED,
+        {"source_status": Verdict.FLAGGED, "facebook": Verdict.FLAGGED},
+    )
+    suspicious = _domain("p.com", Verdict.SUSPICIOUS, {"dns_rbl": Verdict.SUSPICIOUS})
+
+    assert render.domain_tags(banned_in_source) == ["Заблокирован в PWA сервисе"]
+    assert render.domain_tags(banned_in_fb) == ["Заблокирован в FB"]
+    assert render.domain_tags(both) == ["Заблокирован в PWA сервисе", "Заблокирован в FB"]
+    assert render.domain_tags(suspicious) == ["Под подозрением"]
+
+    text = render.render_list([banned_in_source, both], "Проблемные домены", empty_hint="—")
+    assert "<code>s.com</code> — <i>Заблокирован в PWA сервисе</i>" in text
+    assert "<code>sf.com</code> — <i>Заблокирован в PWA сервисе · Заблокирован в FB</i>" in text
+
+
+def test_flagged_by_blocklists_still_gets_a_tag():
+    # Nothing in the list may appear without a reason next to it.
+    item = _domain("x.com", Verdict.FLAGGED, {"dns_rbl": Verdict.FLAGGED})
+    assert render.domain_tags(item) == ["Зашкварен"]
+
+
+def test_clean_domain_has_no_tags():
+    assert render.domain_tags(_domain("ok.com", Verdict.CLEAN)) == []
+
+
+def test_worst_first_inside_a_source_group():
+    items = [
+        _domain("a-suspicious.com", Verdict.SUSPICIOUS),
+        _domain("z-flagged.com", Verdict.FLAGGED, {"facebook": Verdict.FLAGGED}),
+    ]
+    text = render.render_list(items, "Проблемные домены", empty_hint="—")
+    assert text.index("z-flagged.com") < text.index("a-suspicious.com")
 
 
 def test_list_is_capped():
-    domains = [_domain(f"d{i}.com") for i in range(render.LIST_LIMIT + 5)]
-    assert "И ещё 5" in render.render_list(domains, "Все", empty_hint="—")
+    items = [_domain(f"d{i}.com", Verdict.SUSPICIOUS) for i in range(render.LIST_LIMIT + 5)]
+    assert "И ещё 5" in render.render_list(items, "Проблемные домены", empty_hint="—")
 
 
 def test_long_list_fits_telegram_limit():
-    domains = [
-        _domain(f"{'x' * 50}{i}.com", Verdict.FLAGGED, monitoring_enabled=False)
+    items = [
+        _domain(f"{'x' * 50}{i}.com", Verdict.FLAGGED, {"facebook": Verdict.FLAGGED})
         for i in range(500)
     ]
-    assert len(render.render_list(domains, "Все", empty_hint="—")) < 4096
+    assert len(render.render_list(items, "Проблемные домены", empty_hint="—")) < 4096
 
 
 def test_sync_card_reports_each_source():

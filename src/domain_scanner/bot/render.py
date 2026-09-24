@@ -12,7 +12,7 @@ import html
 from collections.abc import Sequence
 
 from domain_scanner.checkers.base import CheckOutcome
-from domain_scanner.db.models import Domain, Verdict
+from domain_scanner.db.models import DomainSource, Verdict
 from domain_scanner.labels import (
     VERDICT_ORDER,
     VERDICT_RU,
@@ -21,7 +21,7 @@ from domain_scanner.labels import (
     plural,
     source_label,
 )
-from domain_scanner.repositories.domains import DomainStats
+from domain_scanner.repositories.domains import DomainStats, DomainWithChecks
 from domain_scanner.services.scanner import ScanReport
 from domain_scanner.services.sync import SyncResult
 
@@ -134,42 +134,80 @@ def render_status(stats: DomainStats) -> str:
 
 # ── /list ────────────────────────────────────────────────────────────────────
 
-PROBLEM_VERDICTS = frozenset({Verdict.FLAGGED, Verdict.SUSPICIOUS, Verdict.ERROR})
+PROBLEM_VERDICTS = frozenset({Verdict.FLAGGED, Verdict.SUSPICIOUS})
+
+# Sources in the order their groups appear.
+SOURCE_ORDER: tuple[DomainSource, ...] = (
+    DomainSource.PWA,
+    DomainSource.SKAKAPP,
+    DomainSource.MANUAL,
+)
+
+TAG_BANNED_IN_SOURCE = "Заблокирован в PWA сервисе"
+TAG_BANNED_IN_FB = "Заблокирован в FB"
+TAG_SUSPICIOUS = "Под подозрением"
+TAG_FLAGGED = "Зашкварен"
 
 
-def _domain_line(d: Domain) -> str:
-    return f"<code>{_e(d.name)}</code>  <i>{_e(source_label(d.source))}</i>"
+def domain_tags(item: DomainWithChecks) -> list[str]:
+    """What is wrong with the domain, from its last scan.
+
+    A domain flagged by something without a tag of its own (blocklists, Safe
+    Browsing) still gets one, so nothing in the list is left unexplained.
+    """
+    tags = []
+    if item.checks.get("source_status") is Verdict.FLAGGED:
+        tags.append(TAG_BANNED_IN_SOURCE)
+    if item.checks.get("facebook") is Verdict.FLAGGED:
+        tags.append(TAG_BANNED_IN_FB)
+
+    verdict = item.domain.current_verdict
+    if verdict is Verdict.SUSPICIOUS:
+        tags.append(TAG_SUSPICIOUS)
+    elif verdict is Verdict.FLAGGED and not tags:
+        tags.append(TAG_FLAGGED)
+    return tags
 
 
-def render_list(domains: Sequence[Domain], title: str, *, empty_hint: str) -> str:
-    if not domains:
+def _domain_line(item: DomainWithChecks) -> str:
+    tags = domain_tags(item)
+    suffix = f" — <i>{_e(' · '.join(tags))}</i>" if tags else ""
+    return f"<code>{_e(item.domain.name)}</code>{suffix}"
+
+
+def _worst_first(item: DomainWithChecks) -> tuple[int, str]:
+    return -item.domain.current_verdict.severity, item.domain.name
+
+
+def render_list(items: Sequence[DomainWithChecks], title: str, *, empty_hint: str) -> str:
+    """Problem domains grouped by the platform they come from."""
+    if not items:
         return f"<b>{_e(title)}</b>\n\n{empty_hint}"
 
-    groups: dict[Verdict, list[Domain]] = {}
-    for d in domains:
-        groups.setdefault(d.current_verdict, []).append(d)
+    groups: dict[DomainSource, list[DomainWithChecks]] = {}
+    for item in items:
+        groups.setdefault(item.domain.source, []).append(item)
+    order = [s for s in SOURCE_ORDER if s in groups]
+    order += [s for s in groups if s not in SOURCE_ORDER]
 
-    lines = [f"<b>{_e(title)}</b> · {len(domains)}"]
+    lines = [f"<b>{_e(title)}</b> · {len(items)}"]
     size = len(lines[0])
     shown = 0
-    for v in VERDICT_ORDER:
-        group = groups.get(v)
-        if not group:
-            continue
-        header = f"<b>{VERDICT_RU[v].capitalize()}</b> · {len(group)}"
+    for source in order:
+        header = f"<b>{_e(source_label(source))}</b>"
         if shown >= LIST_LIMIT or size + len(header) > MESSAGE_BUDGET:
             break
         lines += ["", header]
         size += len(header) + 2
-        for d in group:
-            line = _domain_line(d)
+        for item in sorted(groups[source], key=_worst_first):
+            line = _domain_line(item)
             if shown >= LIST_LIMIT or size + len(line) > MESSAGE_BUDGET:
                 break
             lines.append(line)
             size += len(line) + 1
             shown += 1
-    if shown < len(domains):
-        lines += ["", f"<i>И ещё {len(domains) - shown}. Сузьте фильтр: /list flagged</i>"]
+    if shown < len(items):
+        lines += ["", f"<i>И ещё {len(items) - shown}</i>"]
     return "\n".join(lines)
 
 
