@@ -23,6 +23,10 @@ def build_checkers(settings: Settings) -> list[Checker]:
         checkers.append(GoogleSafeBrowsingChecker(settings.gsb_api_key))
     if settings.fb_app_id and settings.fb_app_secret:
         checkers.append(
-            FacebookUrlChecker(settings.fb_app_id, settings.fb_app_secret)
+            FacebookUrlChecker(
+                settings.fb_app_id,
+                settings.fb_app_secret,
+                hourly_limit=settings.fb_hourly_limit,
+            )
         )
     return checkers

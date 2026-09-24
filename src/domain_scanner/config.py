@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Facebook app credentials; both are needed to build the app access token.
     fb_app_id: str | None = None
     fb_app_secret: str | None = None
+    # Facebook fetches the page on every check, so the app runs into Graph API
+    # limits quickly. Cap how many domains it may check per hour.
+    fb_hourly_limit: int = 60
 
     # Database
     postgres_host: str = "db"

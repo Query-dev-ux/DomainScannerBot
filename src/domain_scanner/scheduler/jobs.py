@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -46,6 +47,9 @@ async def run_scan(app: Application) -> None:
     log.info("job.scan.start")
     try:
         domain_ids = await collect_monitored_domain_ids()
+        # Checks that run on a budget (Facebook) would otherwise always spend it
+        # on the same head of the list; shuffling spreads the coverage.
+        random.shuffle(domain_ids)
         reports = await app.scanner.scan_many(domain_ids)
         alerts = [r for r in reports if r.needs_alert]
         for report in alerts:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from domain_scanner.checkers.facebook import classify
+from domain_scanner.checkers.base import CheckOutcome
+from domain_scanner.checkers.facebook import FacebookUrlChecker, classify
 from domain_scanner.db.models import Verdict
 
 
@@ -104,3 +105,50 @@ def test_description_or_image_alone_counts_as_read():
 
 def test_empty_payload_is_an_error_not_a_verdict():
     assert classify(200, {}).verdict is Verdict.ERROR
+
+
+# ── staying inside Graph API limits ──────────────────────────────────────────
+
+
+class _FakeChecker(FacebookUrlChecker):
+    """Counts requests instead of making them; answers what the test scripts."""
+
+    def __init__(self, *answers, hourly_limit=3):
+        super().__init__("1", "s", hourly_limit=hourly_limit)
+        self.answers = list(answers)
+        self.requests = 0
+
+    async def _request(self, domain):
+        self.requests += 1
+        answer = self.answers.pop(0) if self.answers else None
+        return answer or CheckOutcome(checker="facebook", verdict=Verdict.CLEAN, summary="ok")
+
+
+async def test_hourly_budget_stops_further_requests():
+    checker = _FakeChecker(hourly_limit=2)
+    verdicts = [(await checker.check(f"d{i}.com")) for i in range(4)]
+    assert checker.requests == 2
+    assert [v.verdict for v in verdicts[:2]] == [Verdict.CLEAN, Verdict.CLEAN]
+    # Skipped domains are not a verdict about the domain.
+    assert all(v.verdict is Verdict.ERROR for v in verdicts[2:])
+    assert "лимит" in (verdicts[2].error or "")
+
+
+async def test_rate_limit_answer_pauses_the_checker():
+    limited = classify(400, _err("(#4) Application request limit reached", code=4))
+    checker = _FakeChecker(limited, hourly_limit=50)
+    first = await checker.check("a.com")
+    second = await checker.check("b.com")
+
+    assert first.verdict is Verdict.ERROR
+    assert checker.requests == 1  # the second domain was not even attempted
+    assert "пауза" in (second.error or "")
+
+
+async def test_api_access_blocked_pauses_for_longer():
+    blocked = classify(400, _err("API access blocked.", code=200))
+    checker = _FakeChecker(blocked, hourly_limit=50)
+    await checker.check("a.com")
+    paused = await checker.check("b.com")
+    assert "пауза" in (paused.error or "")
+    assert checker._paused_until > 0

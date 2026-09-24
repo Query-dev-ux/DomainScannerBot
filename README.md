@@ -77,7 +77,7 @@ SkakApp ──────┘              │
 | `source_status` | не нужен | статус домена в платформе: бан в PWApartners (`status 9`) или в SkakApp (`is_baned_register`) → `зашкварен`; просроченный в PWApartners → `подозрительно` |
 | `dns_rbl` | не нужен | резолв домена + Spamhaus DBL / SURBL |
 | `google_safe_browsing` | `GSB_API_KEY` | malware / phishing / unwanted software |
-| `facebook` | `FB_APP_ID` + `FB_APP_SECRET` | блокировка ссылки внутри Facebook |
+| `facebook` | `FB_APP_ID` + `FB_APP_SECRET` | блокировка ссылки внутри Facebook. Не больше `FB_HOURLY_LIMIT` доменов в час: каждая проверка заставляет FB сходить на страницу, и Graph API это жёстко лимитирует |
 
 ### Как работает проверка Facebook
 

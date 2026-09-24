@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from collections import deque
 from typing import Any
 
 import aiohttp
@@ -19,6 +21,12 @@ _TRANSIENT_CODES = frozenset({1, 2, 4, 17, 32, 341, 368, 613})
 
 # Bad/expired app credentials — a config problem, worth saying so plainly.
 _AUTH_CODES = frozenset({102, 190, 200, 458, 467})
+
+# Facebook asking us to slow down, and Facebook having cut the app off.
+_RATE_LIMIT_CODES = frozenset({4, 17, 32, 613})
+_BLOCKED_CODES = frozenset({200, 368})
+_RATE_LIMIT_PAUSE = 30 * 60
+_BLOCKED_PAUSE = 6 * 60 * 60
 
 # Substrings that indicate Facebook refuses the URL on policy grounds.
 # Matched case-insensitively against the error message + user_title + user_msg.
@@ -163,12 +171,50 @@ class FacebookUrlChecker:
     name = NAME
 
     def __init__(
-        self, app_id: str, app_secret: str, *, timeout: float = 40.0
+        self,
+        app_id: str,
+        app_secret: str,
+        *,
+        timeout: float = 40.0,
+        hourly_limit: int = 60,
     ) -> None:
         self._token = f"{app_id}|{app_secret}"
         self._timeout = aiohttp.ClientTimeout(total=timeout)
+        self._hourly_limit = hourly_limit
+        self._recent: deque[float] = deque()
+        self._paused_until = 0.0
+
+    def _budget_left(self, now: float) -> bool:
+        while self._recent and now - self._recent[0] > 3600:
+            self._recent.popleft()
+        return len(self._recent) < self._hourly_limit
+
+    def _pause(self, seconds: float, why: str) -> None:
+        self._paused_until = max(self._paused_until, time.monotonic() + seconds)
+        log.warning("facebook.paused", seconds=int(seconds), why=why)
 
     async def check(self, domain: str) -> CheckOutcome:
+        # Every call makes Facebook fetch the page, so it is easy to run into the
+        # app's request limit — and Meta answers a sustained overrun by blocking
+        # the app's API access outright. Stay inside an hourly budget, and back
+        # off hard once Facebook complains.
+        now = time.monotonic()
+        if now < self._paused_until:
+            left = int(self._paused_until - now)
+            return CheckOutcome.failure(NAME, f"пропущено: пауза после лимита ({left} с)")
+        if not self._budget_left(now):
+            return CheckOutcome.failure(NAME, "пропущено: исчерпан лимит запросов за час")
+        self._recent.append(now)
+
+        outcome = await self._request(domain)
+        code = (outcome.raw.get("error") or {}).get("code") if outcome.raw else None
+        if code in _RATE_LIMIT_CODES:
+            self._pause(_RATE_LIMIT_PAUSE, f"code={code}")
+        elif code in _BLOCKED_CODES:
+            self._pause(_BLOCKED_PAUSE, f"code={code}")
+        return outcome
+
+    async def _request(self, domain: str) -> CheckOutcome:
         data = {
             "id": f"https://{domain}/",
             "scrape": "true",
