@@ -289,3 +289,18 @@ def test_sync_card_reports_each_source():
     assert "<b>SkakApp</b> — ошибка" in text
     failure = render.render_sync_failure(results)
     assert "SkakApp" in failure and "PWApartners" not in failure
+
+
+def test_list_button_counts_only_the_watched_domains():
+    from domain_scanner.bot.keyboards import list_keyboard
+
+    markup = list_keyboard(6)
+    assert markup is not None
+    (button,) = markup.inline_keyboard[0]
+    assert button.text == "Не отслеживать новые (6)"
+
+
+def test_no_list_button_when_nothing_is_watched():
+    from domain_scanner.bot.keyboards import list_keyboard
+
+    assert list_keyboard(0) is None

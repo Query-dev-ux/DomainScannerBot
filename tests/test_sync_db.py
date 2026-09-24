@@ -169,3 +169,31 @@ async def test_status_change_is_matched_by_external_id():
     got = await _domains()
     assert got["old.com"].is_active is True
     assert got["old.com"].external_status == "9"
+
+
+async def test_mute_watched_only_touches_watched_problem_domains():
+    from domain_scanner.db.models import Verdict
+    from domain_scanner.repositories import DomainRepository
+
+    async with session_scope() as s:
+        s.add_all([
+            Domain(name="flagged.com", current_verdict=Verdict.FLAGGED),
+            Domain(name="suspicious.com", current_verdict=Verdict.SUSPICIOUS),
+            Domain(name="clean.com", current_verdict=Verdict.CLEAN),
+            Domain(name="already-muted.com", current_verdict=Verdict.FLAGGED,
+                   monitoring_enabled=False),
+            Domain(name="gone.com", current_verdict=Verdict.FLAGGED, is_active=False),
+        ])
+    async with session_scope() as s:
+        muted = await DomainRepository(s).mute_watched({Verdict.FLAGGED, Verdict.SUSPICIOUS})
+
+    assert muted == 2  # only the two watched problem domains
+    got = await _domains()
+    assert got["flagged.com"].monitoring_enabled is False
+    assert got["suspicious.com"].monitoring_enabled is False
+    assert got["clean.com"].monitoring_enabled is True
+    assert got["gone.com"].monitoring_enabled is True  # not reported by its source
+
+    async with session_scope() as s:
+        again = await DomainRepository(s).mute_watched({Verdict.FLAGGED, Verdict.SUSPICIOUS})
+    assert again == 0  # pressing the button twice changes nothing

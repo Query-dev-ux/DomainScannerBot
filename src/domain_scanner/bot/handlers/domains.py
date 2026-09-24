@@ -7,7 +7,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from domain_scanner.bot import render
-from domain_scanner.bot.keyboards import domain_keyboard
+from domain_scanner.bot.keyboards import domain_keyboard, list_keyboard
 from domain_scanner.db import session_scope
 from domain_scanner.db.models import Verdict
 from domain_scanner.labels import VERDICT_RU
@@ -54,7 +54,11 @@ async def cmd_list(message: Message, command: CommandObject) -> None:
 
     async with session_scope() as session:
         domains = await DomainRepository(session).list_for_display(verdicts)
-    await message.answer(render.render_list(domains, title, empty_hint=hint))
+    watched = sum(1 for d in domains if d.domain.monitoring_enabled)
+    await message.answer(
+        render.render_list(domains, title, empty_hint=hint),
+        reply_markup=list_keyboard(watched),
+    )
 
 
 @router.message(Command("check"))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 from aiogram import Router
@@ -8,7 +9,12 @@ from aiogram.types import CallbackQuery, Message
 
 from domain_scanner.bot import render
 from domain_scanner.bot.handlers.domains import alert_if_needed
-from domain_scanner.bot.keyboards import DomainAction, domain_keyboard
+from domain_scanner.bot.keyboards import (
+    DomainAction,
+    ListAction,
+    domain_keyboard,
+    list_keyboard,
+)
 from domain_scanner.db import session_scope
 from domain_scanner.repositories import DomainRepository
 
@@ -16,6 +22,34 @@ if TYPE_CHECKING:
     from domain_scanner.app import Application
 
 router = Router(name="callbacks")
+
+
+@router.callback_query(ListAction.filter())
+async def on_list_action(query: CallbackQuery, callback_data: ListAction) -> None:
+    """Stop watching everything currently under "Новые" in the list."""
+    if callback_data.action != "mute_new":
+        await query.answer()
+        return
+
+    async with session_scope() as session:
+        muted = await DomainRepository(session).mute_watched(set(render.PROBLEM_VERDICTS))
+    await query.answer(
+        f"Больше не отслеживаю: {muted}" if muted else "Нечего отключать"
+    )
+
+    if isinstance(query.message, Message):
+        async with session_scope() as session:
+            domains = await DomainRepository(session).list_for_display(
+                set(render.PROBLEM_VERDICTS)
+            )
+        watched = sum(1 for d in domains if d.domain.monitoring_enabled)
+        with contextlib.suppress(TelegramBadRequest):
+            await query.message.edit_text(
+                render.render_list(
+                    domains, "Проблемные домены", empty_hint="Проблемных доменов нет."
+                ),
+                reply_markup=list_keyboard(watched),
+            )
 
 
 @router.callback_query(DomainAction.filter())

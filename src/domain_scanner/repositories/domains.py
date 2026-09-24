@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from sqlalchemy import func, not_, select
+from sqlalchemy import func, not_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain_scanner.db.models import Domain, DomainSource, Scan, ScanCheck, Verdict
@@ -94,6 +94,15 @@ class DomainRepository:
         self._session.add(domain)
         await self._session.flush()
         return domain, True
+
+    async def mute_watched(self, verdicts: set[Verdict]) -> int:
+        """Stop watching every still-watched domain with one of these verdicts."""
+        result = await self._session.execute(
+            update(Domain)
+            .where(*_MONITORED, Domain.current_verdict.in_(verdicts))
+            .values(monitoring_enabled=False)
+        )
+        return result.rowcount or 0
 
     async def set_monitoring(self, domain_id: int, enabled: bool) -> Domain | None:
         domain = await self.get(domain_id)
