@@ -29,6 +29,7 @@ VERDICT_ORDER: tuple[Verdict, ...] = (
 )
 
 CHECKER_LABELS: dict[str, str] = {
+    "source_status": "Статус в источнике",
     "dns_rbl": "DNS-блоклисты",
     "google_safe_browsing": "Google Safe Browsing",
     "facebook": "Facebook",

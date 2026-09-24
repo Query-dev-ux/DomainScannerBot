@@ -32,3 +32,13 @@ def test_needs_alert_only_on_change_to_bad():
 
     recovered = ScanReport("d", Verdict.CLEAN, Verdict.FLAGGED, changed=True)
     assert recovered.needs_alert is False
+
+
+def test_source_ban_alone_makes_the_domain_flagged():
+    from domain_scanner.checkers.source_status import check_source_status
+    from domain_scanner.db.models import DomainSource
+
+    ban = check_source_status(DomainSource.PWA, "9")
+    assert ban is not None
+    outcomes = [ban, _out(Verdict.CLEAN), _out(Verdict.CLEAN)]
+    assert aggregate_verdict(outcomes) is Verdict.FLAGGED

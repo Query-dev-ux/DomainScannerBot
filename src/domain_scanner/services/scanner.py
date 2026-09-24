@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from domain_scanner.checkers.base import Checker, CheckOutcome
+from domain_scanner.checkers.source_status import check_source_status
 from domain_scanner.db import session_scope
 from domain_scanner.db.models import Domain, DomainSource, Scan, ScanCheck, Verdict
 from domain_scanner.logging import get_logger
@@ -66,10 +67,15 @@ class ScannerService:
                 return None
             name = domain.name
             source = domain.source
+            external_status = domain.external_status
             previous = domain.current_verdict
             started = datetime.now(UTC)
 
         outcomes = await self._run_checkers(name)
+        # What the platform says comes first: it knows about a ban before DNS does.
+        from_source = check_source_status(source, external_status)
+        if from_source is not None:
+            outcomes.insert(0, from_source)
         verdict = aggregate_verdict(outcomes)
         finished = datetime.now(UTC)
 
