@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     scan_interval_minutes: int = 60
     scan_concurrency: int = 5
 
+    # Display names for platform users, as "login=Имя" pairs separated by commas.
+    # PWApartners logins are e-mails; this is what turns them into readable names.
+    owner_aliases: str = ""
+
     log_level: str = "INFO"
 
     @computed_field  # type: ignore[prop-decorator]
@@ -84,6 +88,16 @@ class Settings(BaseSettings):
     @classmethod
     def _empty_thread_id(cls, value: object) -> object:
         return None if value in ("", None) else value
+
+    @property
+    def owner_alias_map(self) -> dict[str, str]:
+        """Lower-cased platform login -> the name to show instead."""
+        aliases = {}
+        for pair in self.owner_aliases.split(","):
+            login, _, alias = pair.partition("=")
+            if login.strip() and alias.strip():
+                aliases[login.strip().lower()] = alias.strip()
+        return aliases
 
     @property
     def admin_id_set(self) -> set[int]:

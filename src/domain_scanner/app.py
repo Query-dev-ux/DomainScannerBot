@@ -37,7 +37,9 @@ class Application:
         self.scanner = ScannerService(
             build_checkers(settings), concurrency=settings.scan_concurrency
         )
-        self.sync_service = DomainSyncService(build_providers(settings))
+        self.sync_service = DomainSyncService(
+            build_providers(settings), owner_aliases=settings.owner_alias_map
+        )
         self.scheduler = AsyncIOScheduler(timezone="UTC")
         self.dp = build_dispatcher(self)
 

@@ -187,3 +187,19 @@ def test_pwapartners_maps_the_teamate_uuid_onto_a_name():
     assert by_name["a.com"].owner == "vlad_celestial"
     assert by_name["b.com"].owner is None  # uuid we have no name for
     assert by_name["c.com"].owner is None
+
+
+def test_owner_aliases_are_parsed_from_the_env_format():
+    s = _settings(
+        owner_aliases=(
+            " skytrafficcpa@gmail.com=CG_Rustam , ahilesmatuna@gmail.com=CG_Raphael ,, junk"
+        )
+    )
+    assert s.owner_alias_map == {
+        "skytrafficcpa@gmail.com": "CG_Rustam",
+        "ahilesmatuna@gmail.com": "CG_Raphael",
+    }
+
+
+def test_no_aliases_configured():
+    assert _settings().owner_alias_map == {}

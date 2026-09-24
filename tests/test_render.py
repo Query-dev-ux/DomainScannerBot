@@ -321,14 +321,16 @@ def test_list_groups_domains_under_their_owner():
     ]
     text = render.render_list(items, "Проблемные домены", empty_hint="—")
     lines = text.split("\n")
-    assert lines[3:8] == [
-        "<i>PWApartners</i>",
-        " <i>petr</i>",          # owners alphabetically inside the source
+    assert lines[3:10] == [
+        "",
+        "<b>PWApartners</b>",
+        "<i>petr</i>",          # owners alphabetically inside the source
         "  <code>c.com</code> — Под подозрением",
-        " <i>vlad_celestial</i>",
+        "",                      # blank line between owners, so it reads as blocks
+        "<i>vlad_celestial</i>",
         "  <code>b.com</code> — Заблокирован в FB",   # worst first inside an owner
     ]
-    assert text.index("<i>PWApartners</i>") < text.index("<i>SkakApp</i>")
+    assert text.index("<b>PWApartners</b>") < text.index("<b>SkakApp</b>")
 
 
 def test_domains_without_an_owner_are_listed_without_a_heading():

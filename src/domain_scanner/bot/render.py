@@ -236,14 +236,18 @@ def render_list(items: Sequence[DomainWithChecks], title: str, *, empty_hint: st
         lines += ["", header]
         size += len(header) + 2
         for source, group in _by_source(section_items):
-            source_line = f"<i>{_e(source_label(source))}</i>"
+            source_line = f"<b>{_e(source_label(source))}</b>"
             if shown >= LIST_LIMIT or size + len(source_line) > MESSAGE_BUDGET:
                 break
-            lines.append(source_line)
-            size += len(source_line) + 1
-            for owner, owned in _by_owner(group):
+            # A blank line before every block keeps the list from reading as one lump.
+            lines += ["", source_line]
+            size += len(source_line) + 2
+            for position, (owner, owned) in enumerate(_by_owner(group)):
+                if position:
+                    lines.append("")
+                    size += 1
                 if owner:
-                    owner_line = f" <i>{_e(owner)}</i>"
+                    owner_line = f"<i>{_e(owner)}</i>"
                     if shown >= LIST_LIMIT or size + len(owner_line) > MESSAGE_BUDGET:
                         break
                     lines.append(owner_line)

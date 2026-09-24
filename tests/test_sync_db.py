@@ -248,3 +248,21 @@ async def test_sync_stores_the_owner_and_keeps_the_last_known_one():
     pwa.domains = [sd("a.com", external_id="u1", owner="petr")]
     await service.run()
     assert (await _domains())["a.com"].owner == "petr"
+
+
+async def test_owner_aliases_replace_the_platform_login():
+    pwa = FakeProvider(
+        DomainSource.PWA,
+        "PWApartners",
+        [
+            sd("a.com", owner="skytrafficcpa@gmail.com"),
+            sd("b.com", owner="SkyTrafficCPA@gmail.com"),  # casing must not matter
+            sd("c.com", owner="someone-else@gmail.com"),
+        ],
+    )
+    await DomainSyncService([pwa], {"skytrafficcpa@gmail.com": "CG_Rustam"}).run()
+
+    got = await _domains()
+    assert got["a.com"].owner == "CG_Rustam"
+    assert got["b.com"].owner == "CG_Rustam"
+    assert got["c.com"].owner == "someone-else@gmail.com"  # unknown login stays as is

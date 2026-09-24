@@ -31,13 +31,19 @@ class SyncResult:
         return self.error is None
 
 
-def _apply(domain: Domain, item: SourceDomain, source: DomainSource) -> None:
+def _apply(
+    domain: Domain,
+    item: SourceDomain,
+    source: DomainSource,
+    aliases: dict[str, str] | None = None,
+) -> None:
     domain.source = source
     # Reported by the source = checked. The platform status is kept for reference.
     domain.is_active = True
     domain.external_status = item.status
     if item.owner:
-        domain.owner = item.owner
+        # Platform logins are e-mails; show the name the team actually uses.
+        domain.owner = (aliases or {}).get(item.owner.lower(), item.owner)
     domain.external_parent_id = item.external_parent_id
     if item.external_id:
         domain.external_id = item.external_id
@@ -54,8 +60,11 @@ class DomainSyncService:
     that still reports it.
     """
 
-    def __init__(self, providers: list[DomainProvider]) -> None:
+    def __init__(
+        self, providers: list[DomainProvider], owner_aliases: dict[str, str] | None = None
+    ) -> None:
         self.providers = providers
+        self.owner_aliases = owner_aliases or {}
 
     async def run(self) -> list[SyncResult]:
         return [await self.run_source(p) for p in self.providers]
@@ -115,7 +124,7 @@ class DomainSyncService:
 
                 if domain is None:
                     domain = Domain(name=item.name, source=source)
-                    _apply(domain, item, source)
+                    _apply(domain, item, source, self.owner_aliases)
                     session.add(domain)
                     by_name[item.name] = domain
                     result.created += 1
@@ -127,7 +136,7 @@ class DomainSyncService:
                     result.foreign += 1
                     continue
 
-                _apply(domain, item, source)
+                _apply(domain, item, source, self.owner_aliases)
                 touched.add(domain.id)
                 result.updated += 1
 
