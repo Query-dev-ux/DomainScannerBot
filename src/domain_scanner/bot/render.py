@@ -98,9 +98,13 @@ def report_headline(report: ScanReport) -> str:
 
 def render_report(report: ScanReport, *, alert: bool = False) -> str:
     """Card for one scanned domain: what is wrong, which domain, whose it is."""
+    meta = source_label(report.source)
+    if report.owner:
+        meta += f" · {report.owner}"
     return (
         f"<b>{report_headline(report)}</b>\n"
-        f"<code>{_e(report.domain)}</code> {_e(source_label(report.source))}"
+        f"<code>{_e(report.domain)}</code>\n"
+        f"<i>{_e(meta)}</i>"
     )
 
 
@@ -194,7 +198,17 @@ def _by_source(items: Sequence[DomainWithChecks]) -> list[tuple[DomainSource, li
         groups.setdefault(item.domain.source, []).append(item)
     order = [s for s in SOURCE_ORDER if s in groups]
     order += [s for s in groups if s not in SOURCE_ORDER]
-    return [(s, sorted(groups[s], key=_worst_first)) for s in order]
+    return [(s, groups[s]) for s in order]
+
+
+def _by_owner(items: Sequence[DomainWithChecks]) -> list[tuple[str | None, list]]:
+    """Owners alphabetically; domains with no known owner come last, unlabelled."""
+    groups: dict[str | None, list[DomainWithChecks]] = {}
+    for item in items:
+        groups.setdefault(item.domain.owner or None, []).append(item)
+    known = sorted((o for o in groups if o), key=str.lower)
+    order: list[str | None] = [*known, *([None] if None in groups else [])]
+    return [(o, sorted(groups[o], key=_worst_first)) for o in order]
 
 
 def render_list(items: Sequence[DomainWithChecks], title: str, *, empty_hint: str) -> str:
@@ -227,13 +241,21 @@ def render_list(items: Sequence[DomainWithChecks], title: str, *, empty_hint: st
                 break
             lines.append(source_line)
             size += len(source_line) + 1
-            for item in group:
-                line = _domain_line(item)
-                if shown >= LIST_LIMIT or size + len(line) > MESSAGE_BUDGET:
-                    break
-                lines.append(line)
-                size += len(line) + 1
-                shown += 1
+            for owner, owned in _by_owner(group):
+                if owner:
+                    owner_line = f" <i>{_e(owner)}</i>"
+                    if shown >= LIST_LIMIT or size + len(owner_line) > MESSAGE_BUDGET:
+                        break
+                    lines.append(owner_line)
+                    size += len(owner_line) + 1
+                for item in owned:
+                    # Indented under their owner; ownerless domains sit at source level.
+                    line = ("  " if owner else "") + _domain_line(item)
+                    if shown >= LIST_LIMIT or size + len(line) > MESSAGE_BUDGET:
+                        break
+                    lines.append(line)
+                    size += len(line) + 1
+                    shown += 1
     if shown < len(items):
         lines += ["", f"<i>И ещё {len(items) - shown}</i>"]
     return "\n".join(lines)

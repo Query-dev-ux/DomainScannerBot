@@ -30,8 +30,8 @@ SkakApp ──────┘              │
 
 | Источник | Доступ | Откуда берутся домены |
 |---|---|---|
-| PWApartners | `PWA_API_KEY`, `PWA_TEAM_UUID`, `PWA_TEAMATE_UUID` | `GET /dash_api/domains/list` |
-| SkakApp | `SKAKAPP_LOGIN` + `SKAKAPP_PASSWORD` (Basic-auth; API-ключ SkakApp не нужен) | `POST /pwa/list`: `domains[]` (с признаком бана) и домены сплитов |
+| PWApartners | `PWA_API_KEY`, `PWA_TEAM_UUID`, `PWA_TEAMATE_UUID` | `GET /dash_api/domains/list`; владелец — по `teamate_uuid` через `GET /dash_api/team/list` |
+| SkakApp | `SKAKAPP_LOGIN` + `SKAKAPP_PASSWORD` (Basic-auth; API-ключ SkakApp не нужен) | `POST /pwa/list`: `domains[]` (с признаком бана) и домены сплитов; владелец — `createdUsername` |
 
 **Проверяется каждый домен, который отдаёт источник.** Статус платформы не решает,
 проверять домен или нет, но сам по себе является сигналом: бан в PWApartners — это уже
@@ -144,7 +144,8 @@ python -m domain_scanner
 проверка обнаружила ухудшение, алерт всё равно уходит в группу.
 
 Карточка домена — это заголовок с причиной («Домен под подозрением», «Домен
-заблокирован в PWA сервисе», «Домен заблокирован в FB»), сам домен и его источник.
+заблокирован в PWA сервисе», «Домен заблокирован в FB»), сам домен, его источник и
+владелец. В `/list` домены сгруппированы по источнику, а внутри — по владельцу.
 Все тексты бота собраны в [bot/render.py](src/domain_scanner/bot/render.py); стиль
 минималистичный — без эмодзи и без лишней информации.
 

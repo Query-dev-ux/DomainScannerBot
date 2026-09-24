@@ -77,6 +77,8 @@ class Domain(TimestampMixin, Base):
     external_id: Mapped[str | None] = mapped_column(String(128))
     external_parent_id: Mapped[str | None] = mapped_column(String(128))
     external_status: Mapped[str | None] = mapped_column(String(32))
+    # Who the domain belongs to in the platform, as the platform names them.
+    owner: Mapped[str | None] = mapped_column(String(64))
 
     # True while the owning source still reports the domain (always True for manual
     # ones). Domains that vanished from their source stop being checked.

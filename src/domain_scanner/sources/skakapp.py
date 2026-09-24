@@ -51,6 +51,7 @@ def _from_domains_field(pwa: dict[str, Any]) -> list[SourceDomain]:
             SourceDomain(
                 name=name,
                 status=domain_status(entry),
+                owner=pwa.get("createdUsername") or None,
                 external_id=entry.get("cid"),
                 external_parent_id=pwa.get("id"),
                 raw={
@@ -70,6 +71,7 @@ def _split_domains(pwa: dict[str, Any]) -> list[SourceDomain]:
     return [
         SourceDomain(
             name=name,
+            owner=pwa.get("createdUsername") or None,
             external_id=split.get("id"),
             external_parent_id=pwa.get("id"),
             raw={"pwa_id": pwa.get("id"), "pwa_name": pwa.get("name"), "role": "split"},
@@ -85,6 +87,7 @@ def _legacy_domains(pwa: dict[str, Any]) -> list[SourceDomain]:
     return [
         SourceDomain(
             name=name,
+            owner=pwa.get("createdUsername") or None,
             external_parent_id=pwa.get("id"),
             raw={"pwa_id": pwa.get("id"), "pwa_name": pwa.get("name")},
         )

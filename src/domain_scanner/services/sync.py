@@ -36,6 +36,8 @@ def _apply(domain: Domain, item: SourceDomain, source: DomainSource) -> None:
     # Reported by the source = checked. The platform status is kept for reference.
     domain.is_active = True
     domain.external_status = item.status
+    if item.owner:
+        domain.owner = item.owner
     domain.external_parent_id = item.external_parent_id
     if item.external_id:
         domain.external_id = item.external_id

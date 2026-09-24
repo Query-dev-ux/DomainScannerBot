@@ -30,6 +30,7 @@ class ScanReport:
     outcomes: list[CheckOutcome] = field(default_factory=list)
     domain_id: int | None = None
     source: DomainSource | None = None
+    owner: str | None = None
     finished_at: datetime | None = None
 
     @property
@@ -67,6 +68,7 @@ class ScannerService:
                 return None
             name = domain.name
             source = domain.source
+            owner = domain.owner
             external_status = domain.external_status
             started = datetime.now(UTC)
 
@@ -118,6 +120,7 @@ class ScannerService:
             outcomes=outcomes,
             domain_id=domain_id,
             source=source,
+            owner=owner,
             finished_at=finished,
         )
         log.info(

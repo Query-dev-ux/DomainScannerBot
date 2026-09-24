@@ -16,6 +16,8 @@ class SourceDomain:
 
     name: str
     status: str | None = None
+    # Who the domain belongs to in the platform, as the platform names them.
+    owner: str | None = None
     external_id: str | None = None
     external_parent_id: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)

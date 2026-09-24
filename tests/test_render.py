@@ -36,7 +36,7 @@ def _report(**kw) -> ScanReport:
 
 
 def _domain(name: str, verdict: Verdict = Verdict.CLEAN, checks=None, **kw) -> DomainWithChecks:
-    base = dict(source=DomainSource.PWA, is_active=True, monitoring_enabled=True)
+    base = dict(source=DomainSource.PWA, is_active=True, monitoring_enabled=True, owner=None)
     base.update(kw)
     return DomainWithChecks(Domain(name=name, current_verdict=verdict, **base), checks or {})
 
@@ -92,12 +92,18 @@ def test_no_on_off_vocabulary(text: str):
         assert word not in lowered, (word, text)
 
 
-def test_card_is_headline_plus_domain_and_source():
+def test_card_is_headline_domain_and_who_it_belongs_to():
+    text = render.render_report(_report(owner="vlad_celestial"), alert=True)
+    assert text.split("\n") == [
+        "<b>Домен под подозрением</b>",
+        "<code>wintonic.living</code>",
+        "<i>SkakApp · vlad_celestial</i>",
+    ]
+
+
+def test_card_without_a_known_owner_shows_just_the_source():
     text = render.render_report(_report(), alert=True)
-    assert text == (
-        "<b>Домен под подозрением</b>\n"
-        "<code>wintonic.living</code> SkakApp"
-    )
+    assert text.split("\n")[-1] == "<i>SkakApp</i>"
 
 
 def test_card_headline_names_a_platform_ban():
@@ -304,3 +310,33 @@ def test_no_list_button_when_nothing_is_watched():
     from domain_scanner.bot.keyboards import list_keyboard
 
     assert list_keyboard(0) is None
+
+
+def test_list_groups_domains_under_their_owner():
+    items = [
+        _domain("b.com", Verdict.FLAGGED, {"facebook": Verdict.FLAGGED}, owner="vlad_celestial"),
+        _domain("a.com", Verdict.SUSPICIOUS, owner="vlad_celestial"),
+        _domain("c.com", Verdict.SUSPICIOUS, owner="petr"),
+        _domain("d.com", Verdict.SUSPICIOUS, source=DomainSource.SKAKAPP, owner="petr"),
+    ]
+    text = render.render_list(items, "Проблемные домены", empty_hint="—")
+    lines = text.split("\n")
+    assert lines[3:8] == [
+        "<i>PWApartners</i>",
+        " <i>petr</i>",          # owners alphabetically inside the source
+        "  <code>c.com</code> — Под подозрением",
+        " <i>vlad_celestial</i>",
+        "  <code>b.com</code> — Заблокирован в FB",   # worst first inside an owner
+    ]
+    assert text.index("<i>PWApartners</i>") < text.index("<i>SkakApp</i>")
+
+
+def test_domains_without_an_owner_are_listed_without_a_heading():
+    items = [
+        _domain("known.com", Verdict.SUSPICIOUS, owner="petr"),
+        _domain("orphan.com", Verdict.SUSPICIOUS),
+    ]
+    text = render.render_list(items, "Проблемные домены", empty_hint="—")
+    # The ownerless domain sits at source level, last, with no owner line above it.
+    assert text.split("\n")[-1] == "<code>orphan.com</code> — Под подозрением"
+    assert text.count("<i>petr</i>") == 1

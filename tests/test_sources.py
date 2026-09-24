@@ -152,3 +152,38 @@ def test_skakapp_sends_login_and_password_as_basic_auth():
 
 def test_default_is_to_check_hourly():
     assert _settings().scan_interval_minutes == 60
+
+
+# ── кто владеет доменом ──────────────────────────────────────────────────────
+
+
+def test_skakapp_takes_the_owner_from_the_pwa():
+    pwa = dict(PWA_WITH_A_BANNED_DOMAIN, createdUsername="vlad_celestial")
+    assert {d.owner for d in parse_pwas([pwa])} == {"vlad_celestial"}
+
+
+def test_skakapp_without_a_username_leaves_the_owner_empty():
+    pwa = dict(PWA_WITH_A_BANNED_DOMAIN, createdUsername="")
+    assert {d.owner for d in parse_pwas([pwa])} == {None}
+
+
+def test_pwapartners_maps_the_teamate_uuid_onto_a_name():
+    from domain_scanner.sources.pwa_partners import parse_teamates
+
+    owners = parse_teamates([
+        {"uuid": "u1", "login": "vlad@mail", "team_username": "vlad_celestial"},
+        {"uuid": "u2", "login": "petr"},          # no team_username — login is used
+        {"uuid": "u3"},                            # no name at all — skipped
+        {"login": "nouuid"},                       # no uuid — skipped
+    ])
+    assert owners == {"u1": "vlad_celestial", "u2": "petr"}
+
+    items = [
+        {"uuid": "d1", "domain": "a.com", "teamate_uuid": "u1"},
+        {"uuid": "d2", "domain": "b.com", "teamate_uuid": "unknown"},
+        {"uuid": "d3", "domain": "c.com"},
+    ]
+    by_name = {d.name: d for d in parse_domains(items, owners)}
+    assert by_name["a.com"].owner == "vlad_celestial"
+    assert by_name["b.com"].owner is None  # uuid we have no name for
+    assert by_name["c.com"].owner is None

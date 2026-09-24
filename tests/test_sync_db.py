@@ -230,3 +230,21 @@ async def test_two_overlapping_scans_alert_only_once():
     assert first.verdict is second.verdict is Verdict.FLAGGED
     assert [first.needs_alert, second.needs_alert].count(True) == 1
     assert (await _domains())["x.com"].current_verdict is Verdict.FLAGGED
+
+
+async def test_sync_stores_the_owner_and_keeps_the_last_known_one():
+    pwa = FakeProvider(
+        DomainSource.PWA, "PWApartners", [sd("a.com", external_id="u1", owner="vlad_celestial")]
+    )
+    service = DomainSyncService([pwa])
+    await service.run()
+    assert (await _domains())["a.com"].owner == "vlad_celestial"
+
+    # A sync that cannot resolve the name must not wipe the one we already have.
+    pwa.domains = [sd("a.com", external_id="u1")]
+    await service.run()
+    assert (await _domains())["a.com"].owner == "vlad_celestial"
+
+    pwa.domains = [sd("a.com", external_id="u1", owner="petr")]
+    await service.run()
+    assert (await _domains())["a.com"].owner == "petr"
