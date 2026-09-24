@@ -29,10 +29,14 @@ _BAD_STATUSES: dict[DomainSource, dict[str, tuple[Verdict, str]]] = {
 
 
 def check_source_status(source: DomainSource | None, status: str | None) -> CheckOutcome | None:
-    """None when the source says nothing bad (or says nothing at all)."""
+    """None when the source says nothing bad (or says nothing at all).
+
+    Matching ignores case: SkakApp documents its statuses as ACTIVE/DISABLE/… but
+    the live API answers with "active", so the spec's casing cannot be trusted.
+    """
     if source is None or status is None:
         return None
-    verdict_and_text = _BAD_STATUSES.get(source, {}).get(status.strip())
+    verdict_and_text = _BAD_STATUSES.get(source, {}).get(status.strip().lower())
     if verdict_and_text is None:
         return None
     verdict, summary = verdict_and_text
