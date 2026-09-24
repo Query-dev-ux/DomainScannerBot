@@ -22,9 +22,12 @@ _BAD_STATUSES: dict[DomainSource, dict[str, tuple[Verdict, str]]] = {
         "9": (Verdict.FLAGGED, "забанен в PWApartners"),
         "8": (Verdict.SUSPICIOUS, "просрочен в PWApartners"),
     },
-    # SkakApp's PWA statuses (NEW / ACTIVE / DISABLE / DISABLE_BALANCE / ARCHIVE)
-    # say nothing about the domain's reputation, so nothing is reported for them.
-    DomainSource.SKAKAPP: {},
+    # From SkakApp's domains[].is_baned_register — the flag behind the
+    # "Domain is banned" its dashboard shows. A domain that is merely disabled
+    # says nothing about reputation and is not reported.
+    DomainSource.SKAKAPP: {
+        "banned": (Verdict.FLAGGED, "заблокирован в SkakApp"),
+    },
 }
 
 

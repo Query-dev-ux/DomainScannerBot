@@ -31,7 +31,7 @@ SkakApp ──────┘              │
 | Источник | Доступ | Откуда берутся домены |
 |---|---|---|
 | PWApartners | `PWA_API_KEY`, `PWA_TEAM_UUID`, `PWA_TEAMATE_UUID` | `GET /dash_api/domains/list` |
-| SkakApp | `SKAKAPP_LOGIN` + `SKAKAPP_PASSWORD` (Basic-auth; API-ключ SkakApp не нужен) | `POST /pwa/list`: основной домен, `extDomains` и домены сплитов |
+| SkakApp | `SKAKAPP_LOGIN` + `SKAKAPP_PASSWORD` (Basic-auth; API-ключ SkakApp не нужен) | `POST /pwa/list`: `domains[]` (с признаком бана) и домены сплитов |
 
 **Проверяется каждый домен, который отдаёт источник.** Статус платформы не решает,
 проверять домен или нет, но сам по себе является сигналом: бан в PWApartners — это уже
@@ -74,7 +74,7 @@ SkakApp ──────┘              │
 
 | Checker | Ключ | Что покрывает |
 |---|---|---|
-| `source_status` | не нужен | статус домена в самой платформе: `забанен` в PWApartners → `зашкварен`, `просрочен` → `подозрительно` |
+| `source_status` | не нужен | статус домена в платформе: бан в PWApartners (`status 9`) или в SkakApp (`is_baned_register`) → `зашкварен`; просроченный в PWApartners → `подозрительно` |
 | `dns_rbl` | не нужен | резолв домена + Spamhaus DBL / SURBL |
 | `google_safe_browsing` | `GSB_API_KEY` | malware / phishing / unwanted software |
 | `facebook` | `FB_APP_ID` + `FB_APP_SECRET` | блокировка ссылки внутри Facebook |

@@ -20,39 +20,92 @@ def basic_auth_header(login: str, password: str) -> str:
     return f"Basic {token}"
 
 
-def _pwa_domains(pwa: dict[str, Any]) -> list[tuple[str | None, str, str | None]]:
-    """(raw domain, role, split id) for every domain a PWA serves traffic on."""
-    found: list[tuple[str | None, str, str | None]] = [(pwa.get("domain"), "main", None)]
-    found += [(d, "ext", None) for d in pwa.get("extDomains") or [] if isinstance(d, str)]
-    found += [
-        (s.get("domain"), "split", s.get("id"))
-        for s in pwa.get("splits") or []
-        if isinstance(s, dict)
+# Statuses stored on the domain, read back by the source_status checker.
+STATUS_BANNED = "banned"
+STATUS_DISABLED = "disabled"
+STATUS_OK = "ok"
+
+
+def domain_status(entry: dict[str, Any]) -> str:
+    """What `domains[]` says about one domain.
+
+    `is_baned_register` is the flag behind the "Domain is banned" the dashboard
+    shows; a banned domain also comes with is_disable and a cleared cloudflare_id.
+    """
+    if entry.get("is_baned_register"):
+        return STATUS_BANNED
+    if entry.get("is_disable"):
+        return STATUS_DISABLED
+    return STATUS_OK
+
+
+def _from_domains_field(pwa: dict[str, Any]) -> list[SourceDomain]:
+    result = []
+    for entry in pwa.get("domains") or []:
+        if not isinstance(entry, dict):
+            continue
+        name = normalize_domain(entry.get("domain"))
+        if name is None:
+            continue
+        result.append(
+            SourceDomain(
+                name=name,
+                status=domain_status(entry),
+                external_id=entry.get("cid"),
+                external_parent_id=pwa.get("id"),
+                raw={
+                    "pwa_id": pwa.get("id"),
+                    "pwa_name": pwa.get("name"),
+                    "is_main": entry.get("is_main"),
+                    "expiry": entry.get("expiryDatetime"),
+                    "is_baned_register": entry.get("is_baned_register"),
+                    "is_disable": entry.get("is_disable"),
+                },
+            )
+        )
+    return result
+
+
+def _split_domains(pwa: dict[str, Any]) -> list[SourceDomain]:
+    return [
+        SourceDomain(
+            name=name,
+            external_id=split.get("id"),
+            external_parent_id=pwa.get("id"),
+            raw={"pwa_id": pwa.get("id"), "pwa_name": pwa.get("name"), "role": "split"},
+        )
+        for split in pwa.get("splits") or []
+        if isinstance(split, dict) and (name := normalize_domain(split.get("domain")))
     ]
-    return found
+
+
+def _legacy_domains(pwa: dict[str, Any]) -> list[SourceDomain]:
+    """Before `domains[]` existed the API gave only bare hostnames."""
+    plain = [pwa.get("domain"), *(d for d in pwa.get("extDomains") or [] if isinstance(d, str))]
+    return [
+        SourceDomain(
+            name=name,
+            external_parent_id=pwa.get("id"),
+            raw={"pwa_id": pwa.get("id"), "pwa_name": pwa.get("name")},
+        )
+        for raw in plain
+        if (name := normalize_domain(raw))
+    ]
 
 
 def parse_pwas(pwas: list[dict[str, Any]]) -> list[SourceDomain]:
     """Map one page of `POST /pwa/list` onto SourceDomain.
 
-    A PWA can carry a main domain, extra domains and split domains; all of them
-    receive traffic, so each becomes its own SourceDomain.
+    `domains[]` is the detailed list — main and extra domains with their own id,
+    expiry and ban flag — and is preferred. Split domains live in their own field
+    and are added on top; if the platform ever stops sending `domains[]`, the bare
+    `domain`/`extDomains` strings are used instead.
     """
     result: list[SourceDomain] = []
     for pwa in pwas:
-        for raw_domain, role, split_id in _pwa_domains(pwa):
-            name = normalize_domain(raw_domain)
-            if name is None:
-                continue
-            result.append(
-                SourceDomain(
-                    name=name,
-                    status=pwa.get("status"),
-                    external_id=split_id,
-                    external_parent_id=pwa.get("id"),
-                    raw={"pwa_id": pwa.get("id"), "pwa_name": pwa.get("name"), "role": role},
-                )
-            )
+        detailed = _from_domains_field(pwa)
+        result += detailed or _legacy_domains(pwa)
+        result += _split_domains(pwa)
     return result
 
 

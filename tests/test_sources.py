@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import base64
 
+from domain_scanner.checkers.source_status import check_source_status
 from domain_scanner.config import Settings
+from domain_scanner.db.models import DomainSource, Verdict
 from domain_scanner.sources import SkakAppProvider, SourceDomain, build_providers, dedupe
 from domain_scanner.sources.pwa_partners import parse_domains
-from domain_scanner.sources.skakapp import parse_pwas
+from domain_scanner.sources.skakapp import domain_status, parse_pwas
 
 
 def _settings(**kw) -> Settings:
@@ -13,42 +15,87 @@ def _settings(**kw) -> Settings:
     return Settings(**base, **kw)
 
 
-def test_skakapp_collects_main_ext_and_split_domains():
-    pwas = [
+# One PWA as the live API returns it (fields trimmed to the ones we read).
+PWA_WITH_A_BANNED_DOMAIN = {
+    "id": "4gQv",
+    "name": "PL | Revolut Slots | STARE",
+    "status": "active",
+    "domain": "revogames.best",
+    "extDomains": ["revogogame.online"],
+    "splits": [],
+    "domains": [
         {
-            "id": "pwa-1",
-            "name": "Slots",
-            "status": "ACTIVE",
-            "domain": "https://Main.example.com/",
-            "extDomains": ["ext.example.com"],
-            "splits": [{"id": "s1", "domain": "split.example.com"}],
-        }
-    ]
-    by_name = {d.name: d for d in parse_pwas(pwas)}
+            "cid": "bNA9",
+            "domain": "revogames.best",
+            "expiryDatetime": "2027-08-24 10:44:33",
+            "is_disable": False,
+            "is_baned_register": False,
+            "cloudflare_id": -1,
+            "is_main": True,
+        },
+        {
+            "cid": "bNtl",
+            "domain": "revogogame.online",
+            "expiryDatetime": "2027-08-21 19:27:36",
+            "is_disable": True,
+            "is_baned_register": True,
+            "cloudflare_id": None,
+            "is_main": False,
+        },
+    ],
+}
 
-    assert set(by_name) == {"main.example.com", "ext.example.com", "split.example.com"}
-    assert all(d.external_parent_id == "pwa-1" for d in by_name.values())
+
+def test_skakapp_reads_the_ban_flag_from_the_domains_field():
+    by_name = {d.name: d for d in parse_pwas([PWA_WITH_A_BANNED_DOMAIN])}
+
+    assert set(by_name) == {"revogames.best", "revogogame.online"}
+    assert by_name["revogames.best"].status == "ok"
+    assert by_name["revogogame.online"].status == "banned"
+    assert by_name["revogogame.online"].external_id == "bNtl"  # the domain's own id
+    assert all(d.external_parent_id == "4gQv" for d in by_name.values())
+    assert by_name["revogogame.online"].raw["expiry"] == "2027-08-21 19:27:36"
+
+
+def test_banned_domain_is_flagged_end_to_end():
+    parsed = parse_pwas([PWA_WITH_A_BANNED_DOMAIN])
+    banned = next(d for d in parsed if d.name == "revogogame.online")
+    outcome = check_source_status(DomainSource.SKAKAPP, banned.status)
+    assert outcome is not None
+    assert outcome.verdict is Verdict.FLAGGED
+    assert outcome.summary == "заблокирован в SkakApp"
+
+
+def test_domain_status_flags():
+    assert domain_status({"is_baned_register": True, "is_disable": True}) == "banned"
+    assert domain_status({"is_disable": True}) == "disabled"
+    assert domain_status({"is_disable": False, "is_baned_register": False}) == "ok"
+    # Merely disabled is not a reputation problem.
+    assert check_source_status(DomainSource.SKAKAPP, "disabled") is None
+    assert check_source_status(DomainSource.SKAKAPP, "ok") is None
+
+
+def test_split_domains_are_added_on_top_of_the_domains_field():
+    pwa = dict(PWA_WITH_A_BANNED_DOMAIN, splits=[{"id": "s1", "domain": "split.example.com"}])
+    by_name = {d.name: d for d in parse_pwas([pwa])}
+    assert "split.example.com" in by_name
     assert by_name["split.example.com"].external_id == "s1"
-    assert by_name["ext.example.com"].raw["role"] == "ext"
 
 
-def test_skakapp_keeps_every_domain_whatever_the_pwa_status():
-    statuses = ["NEW", "ACTIVE", "DISABLE", "DISABLE_BALANCE", "ARCHIVE"]
-    pwas = [
-        {"id": str(i), "status": s, "domain": f"d{i}.example.com"}
-        for i, s in enumerate(statuses)
-    ]
-    got = parse_pwas(pwas)
-    assert len(got) == len(statuses)
-    assert [d.status for d in got] == statuses  # kept for reference only
+def test_falls_back_to_bare_hostnames_without_the_domains_field():
+    pwa = {
+        "id": "old",
+        "domain": "https://Main.example.com/",
+        "extDomains": ["ext.example.com", "not a domain", 5],
+        "splits": [{"id": "s1", "domain": "split.example.com"}],
+    }
+    got = {d.name for d in parse_pwas([pwa])}
+    assert got == {"main.example.com", "ext.example.com", "split.example.com"}
 
 
-def test_skakapp_skips_missing_and_garbage_domains():
-    pwas = [
-        {"id": "a", "status": "ACTIVE", "domain": None, "extDomains": ["not a domain", 5]},
-        {"id": "b", "status": "ACTIVE", "splits": [{"id": "x"}, "junk"]},
-    ]
-    assert parse_pwas(pwas) == []
+def test_skakapp_skips_garbage_entries():
+    pwa = {"id": "a", "domains": [{"cid": "1"}, "junk", {"cid": "2", "domain": "not a domain"}]}
+    assert parse_pwas([pwa]) == []
 
 
 def test_pwa_partners_parsing_keeps_every_status():
