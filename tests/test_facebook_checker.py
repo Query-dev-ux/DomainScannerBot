@@ -20,9 +20,11 @@ def test_scraped_page_is_clean():
     assert outcome.raw == payload
 
 
-def test_clean_without_og_object_still_clean():
+def test_bare_id_echo_is_not_clean():
+    # Graph echoes the URL with nothing else when Facebook has no page for it.
+    # Treating that as "clean" was the bug scrape=true fixes.
     outcome = classify(200, {"id": "https://example.com/"})
-    assert outcome.verdict is Verdict.CLEAN
+    assert outcome.verdict is Verdict.SUSPICIOUS
 
 
 def test_community_standards_block_is_flagged():
@@ -72,3 +74,33 @@ def test_unknown_error_stays_quiet_but_keeps_raw():
 
 def test_success_status_without_id_is_error():
     assert classify(200, {"unexpected": True}).verdict is Verdict.ERROR
+
+
+# ── scrape=true responses (shapes verified against the live Graph API) ────────
+
+
+def test_scraped_page_with_title_is_clean():
+    payload = {"url": "https://a.com/", "type": "website", "title": "Chrono Shards"}
+    outcome = classify(200, payload)
+    assert outcome.verdict is Verdict.CLEAN
+    assert "Chrono Shards" in (outcome.summary or "")
+
+
+def test_page_facebook_could_not_read_is_suspicious():
+    # What a domain that no longer resolves returns: no title, no description.
+    payload = {"url": "https://gone.com/", "type": "website", "updated_time": "2026-09-24T10:03Z"}
+    outcome = classify(200, payload)
+    assert outcome.verdict is Verdict.SUSPICIOUS
+    assert outcome.summary == "FB не смог прочитать страницу"
+    assert outcome.raw == payload
+
+
+def test_description_or_image_alone_counts_as_read():
+    only_description = {"url": "https://a.com/", "description": "..."}
+    only_image = {"url": "https://a.com/", "image": [{"url": "x"}]}
+    assert classify(200, only_description).verdict is Verdict.CLEAN
+    assert classify(200, only_image).verdict is Verdict.CLEAN
+
+
+def test_empty_payload_is_an_error_not_a_verdict():
+    assert classify(200, {}).verdict is Verdict.ERROR

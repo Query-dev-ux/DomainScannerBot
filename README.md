@@ -82,16 +82,20 @@ SkakApp ──────┘              │
 ### Как работает проверка Facebook
 
 Официального API «заблокирован ли домен» нет. Чекер использует **Graph API URL node**
-(`GET /v21.0/?id=https://<домен>/&fields=og_object,engagement`) — тот же запрос, на
-котором построен [Sharing Debugger](https://developers.facebook.com/tools/debug/).
-Аутентификация — app access token (`{app_id}|{app_secret}`), логин пользователя не нужен.
+со `scrape=true` (`POST /v21.0/?id=https://<домен>/&scrape=true`) — тот же вызов, что
+делает [Sharing Debugger](https://developers.facebook.com/tools/debug/). Аутентификация —
+app access token (`{app_id}|{app_secret}`), логин пользователя не нужен.
+
+`scrape=true` здесь принципиален: без него Graph отдаёт только то, что у Facebook уже
+закэшировано, и на незнакомый домен отвечает нулями без ошибки — мёртвый домен выглядит
+как здоровый. Со `scrape=true` Facebook реально идёт на страницу.
 
 | Ответ Graph API | Вердикт |
 |---|---|
-| объект отдался (`id` + `og_object`) | `clean` |
+| есть `title` / `description` / `image` — страница прочитана | `clean` |
 | ошибка с маркером блокировки (`Community Standards`, `not allowed`, `unsafe`…) | `flagged` |
-| краулер не смог прочитать страницу (`no data was scraped`…) | `suspicious` |
-| transient / rate limit / незнакомая ошибка | `error` (алерт не шлётся) |
+| только `url` / `type` / `updated_time` — FB не смог прочитать страницу | `suspicious` |
+| transient / rate limit / кривые креды / незнакомая ошибка | `error` (алерт не шлётся) |
 
 Полный ответ Graph API всегда сохраняется в `scan_checks.raw` — по накопленным данным
 списки маркеров в [checkers/facebook.py](src/domain_scanner/checkers/facebook.py)

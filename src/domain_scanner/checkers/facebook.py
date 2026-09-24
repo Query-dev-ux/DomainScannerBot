@@ -64,25 +64,37 @@ def classify(status: int, payload: dict[str, Any]) -> CheckOutcome:
     error = payload.get("error")
 
     if not error:
-        if status == 200 and "id" in payload:
-            og = payload.get("og_object") or {}
-            shares = (payload.get("engagement") or {}).get("share_count")
-            bits = []
-            if og.get("title"):
-                bits.append(f"og:title «{og['title']}»")
-            if shares is not None:
-                bits.append(f"шеров: {shares}")
-            detail = "; ".join(bits) if bits else "страница прочитана"
+        if status != 200:
+            return CheckOutcome(
+                checker=NAME,
+                verdict=Verdict.ERROR,
+                error=f"неожиданный ответ Graph API (HTTP {status})",
+                raw=payload,
+            )
+        # A scrape that reached the page comes back with what FB read off it.
+        # A domain FB cannot open returns only url/type/updated_time — that is
+        # how a dead or blocked domain looks, verified on a domain that no
+        # longer resolves.
+        title = payload.get("title") or (payload.get("og_object") or {}).get("title")
+        if title or payload.get("description") or payload.get("image"):
+            detail = f": «{title}»" if title else ""
             return CheckOutcome(
                 checker=NAME,
                 verdict=Verdict.CLEAN,
-                summary=f"FB отдаёт ссылку нормально ({detail})",
+                summary=f"FB читает страницу{detail}",
+                raw=payload,
+            )
+        if "url" in payload or "id" in payload:
+            return CheckOutcome(
+                checker=NAME,
+                verdict=Verdict.SUSPICIOUS,
+                summary="FB не смог прочитать страницу",
                 raw=payload,
             )
         return CheckOutcome(
             checker=NAME,
             verdict=Verdict.ERROR,
-            error=f"неожиданный ответ Graph API (HTTP {status})",
+            error="неожиданный ответ Graph API: ни страницы, ни ошибки",
             raw=payload,
         )
 
@@ -138,29 +150,33 @@ def classify(status: int, payload: dict[str, Any]) -> CheckOutcome:
 class FacebookUrlChecker:
     """Checks whether Facebook will accept a link to the domain.
 
-    Uses the Graph API URL node — the same lookup that powers the Sharing
-    Debugger — with an app access token (`{app_id}|{app_secret}`), which needs no
-    user login. A domain banned under Community Standards comes back as an error
-    instead of a scraped Open Graph object.
+    Uses the Graph API URL node with `scrape=true` — the same call the Sharing
+    Debugger makes — authenticated by an app access token (`{app_id}|{app_secret}`),
+    which needs no user login.
+
+    `scrape=true` matters: without it Graph only replays what Facebook already has
+    cached and answers with zero engagement for anything it has never seen, so a
+    dead or blocked domain looks exactly like a healthy one. With it, Facebook
+    actually fetches the page and the answer says whether it could.
     """
 
     name = NAME
 
     def __init__(
-        self, app_id: str, app_secret: str, *, timeout: float = 25.0
+        self, app_id: str, app_secret: str, *, timeout: float = 40.0
     ) -> None:
         self._token = f"{app_id}|{app_secret}"
         self._timeout = aiohttp.ClientTimeout(total=timeout)
 
     async def check(self, domain: str) -> CheckOutcome:
-        params = {
+        data = {
             "id": f"https://{domain}/",
-            "fields": "og_object,engagement",
+            "scrape": "true",
             "access_token": self._token,
         }
         try:
             async with aiohttp.ClientSession(timeout=self._timeout) as session:
-                async with session.get(_ENDPOINT, params=params) as resp:
+                async with session.post(_ENDPOINT, data=data) as resp:
                     status = resp.status
                     try:
                         payload = await resp.json(content_type=None)
