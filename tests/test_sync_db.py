@@ -197,3 +197,36 @@ async def test_mute_watched_only_touches_watched_problem_domains():
     async with session_scope() as s:
         again = await DomainRepository(s).mute_watched({Verdict.FLAGGED, Verdict.SUSPICIOUS})
     assert again == 0  # pressing the button twice changes nothing
+
+
+async def test_two_overlapping_scans_alert_only_once():
+    """The hourly job and /scan_now can hit the same domain at the same time.
+    Both used to compare against the verdict read before the checks ran, so both
+    reported a change and the group got the same alert twice."""
+    import asyncio
+
+    from domain_scanner.checkers.base import CheckOutcome
+    from domain_scanner.db.models import Verdict
+    from domain_scanner.services.scanner import ScannerService
+
+    class Banned:
+        name = "dns_rbl"
+
+        async def check(self, domain: str) -> CheckOutcome:
+            await asyncio.sleep(0.05)  # let both scans overlap
+            return CheckOutcome(checker=self.name, verdict=Verdict.FLAGGED, summary="плохой")
+
+    async with session_scope() as s:
+        domain = Domain(name="x.com", source=DomainSource.SKAKAPP, current_verdict=Verdict.CLEAN)
+        s.add(domain)
+        await s.flush()
+        domain_id = domain.id
+
+    scanner = ScannerService([Banned()], concurrency=2)
+    first, second = await asyncio.gather(
+        scanner.scan_domain(domain_id), scanner.scan_domain(domain_id)
+    )
+
+    assert first.verdict is second.verdict is Verdict.FLAGGED
+    assert [first.needs_alert, second.needs_alert].count(True) == 1
+    assert (await _domains())["x.com"].current_verdict is Verdict.FLAGGED

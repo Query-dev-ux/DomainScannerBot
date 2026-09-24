@@ -68,7 +68,6 @@ class ScannerService:
             name = domain.name
             source = domain.source
             external_status = domain.external_status
-            previous = domain.current_verdict
             started = datetime.now(UTC)
 
         outcomes = await self._run_checkers(name)
@@ -80,14 +79,18 @@ class ScannerService:
         finished = datetime.now(UTC)
 
         async with session_scope() as session:
-            domain = await session.get(Domain, domain_id)
+            # Locked for the read-modify-write: two scans of the same domain can
+            # overlap (the hourly job and /scan_now), and without this both would
+            # compare against the stale verdict and both would alert.
+            domain = await session.get(Domain, domain_id, with_for_update=True)
             if domain is None:
                 return None
-            changed = verdict != domain.current_verdict
+            previous = domain.current_verdict
+            changed = verdict != previous
             scan = Scan(
                 domain_id=domain_id,
                 verdict=verdict,
-                previous_verdict=domain.current_verdict,
+                previous_verdict=previous,
                 changed=changed,
                 started_at=started,
                 finished_at=finished,
@@ -111,7 +114,7 @@ class ScannerService:
             domain=name,
             verdict=verdict,
             previous_verdict=previous,
-            changed=verdict != previous,
+            changed=changed,
             outcomes=outcomes,
             domain_id=domain_id,
             source=source,
