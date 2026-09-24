@@ -174,7 +174,7 @@ def test_tags_name_the_actual_problem():
     banned_in_fb = _domain("f.com", Verdict.FLAGGED, {"facebook": Verdict.FLAGGED})
     both = _domain(
         "sf.com", Verdict.FLAGGED,
-        {"source_status": Verdict.FLAGGED, "facebook": Verdict.FLAGGED},
+        {"source_status": Verdict.FLAGGED, "facebook": Verdict.FLAGGED, "dns_rbl": Verdict.CLEAN},
     )
     suspicious = _domain("p.com", Verdict.SUSPICIOUS, {"dns_rbl": Verdict.SUSPICIOUS})
 
@@ -188,10 +188,36 @@ def test_tags_name_the_actual_problem():
     assert "<code>sf.com</code> — <i>Заблокирован в PWA сервисе · Заблокирован в FB</i>" in text
 
 
-def test_flagged_by_blocklists_still_gets_a_tag():
-    # Nothing in the list may appear without a reason next to it.
-    item = _domain("x.com", Verdict.FLAGGED, {"dns_rbl": Verdict.FLAGGED})
-    assert render.domain_tags(item) == ["Зашкварен"]
+def test_a_domain_can_carry_all_three_tags():
+    item = _domain(
+        "all.com", Verdict.FLAGGED,
+        {
+            "source_status": Verdict.FLAGGED,
+            "facebook": Verdict.FLAGGED,
+            "dns_rbl": Verdict.FLAGGED,
+        },
+    )
+    assert render.domain_tags(item) == [
+        "Заблокирован в PWA сервисе",
+        "Заблокирован в FB",
+        "Под подозрением",
+    ]
+
+
+def test_everything_other_than_a_ban_reads_as_suspicious():
+    # Blocklists, Safe Browsing, a page Facebook could not read — all the same tag.
+    for checks in (
+        {"dns_rbl": Verdict.FLAGGED},
+        {"google_safe_browsing": Verdict.FLAGGED},
+        {"facebook": Verdict.SUSPICIOUS},
+        {"source_status": Verdict.SUSPICIOUS},
+        {"dns_rbl": Verdict.SUSPICIOUS},
+    ):
+        assert render.domain_tags(_domain("x.com", Verdict.FLAGGED, checks)) == ["Под подозрением"]
+
+
+def test_problem_domain_without_check_data_still_gets_a_tag():
+    assert render.domain_tags(_domain("x.com", Verdict.FLAGGED)) == ["Под подозрением"]
 
 
 def test_clean_domain_has_no_tags():

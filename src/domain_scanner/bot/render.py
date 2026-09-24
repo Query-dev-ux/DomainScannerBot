@@ -146,27 +146,39 @@ SOURCE_ORDER: tuple[DomainSource, ...] = (
 TAG_BANNED_IN_SOURCE = "Заблокирован в PWA сервисе"
 TAG_BANNED_IN_FB = "Заблокирован в FB"
 TAG_SUSPICIOUS = "Под подозрением"
-TAG_FLAGGED = "Зашкварен"
+
+_PROBLEM = (Verdict.SUSPICIOUS, Verdict.FLAGGED)
 
 
 def domain_tags(item: DomainWithChecks) -> list[str]:
     """What is wrong with the domain, from its last scan.
 
-    A domain flagged by something without a tag of its own (blocklists, Safe
-    Browsing) still gets one, so nothing in the list is left unexplained.
+    A ban in the platform and a block in Facebook get named; everything else —
+    blocklists, Safe Browsing, a page Facebook could not read, an expired domain —
+    is "Под подозрением". All three can apply at once.
     """
-    tags = []
-    if item.checks.get("source_status") is Verdict.FLAGGED:
-        tags.append(TAG_BANNED_IN_SOURCE)
-    if item.checks.get("facebook") is Verdict.FLAGGED:
-        tags.append(TAG_BANNED_IN_FB)
+    banned_in_source = banned_in_fb = suspicious = False
+    for checker, verdict in item.checks.items():
+        if checker == "source_status" and verdict is Verdict.FLAGGED:
+            banned_in_source = True
+        elif checker == "facebook" and verdict is Verdict.FLAGGED:
+            banned_in_fb = True
+        elif verdict in _PROBLEM:
+            suspicious = True
 
-    verdict = item.domain.current_verdict
-    if verdict is Verdict.SUSPICIOUS:
-        tags.append(TAG_SUSPICIOUS)
-    elif verdict is Verdict.FLAGGED and not tags:
-        tags.append(TAG_FLAGGED)
-    return tags
+    # No per-check data (an old scan, or none yet) — fall back to the verdict.
+    if not item.checks and item.domain.current_verdict in _PROBLEM:
+        suspicious = True
+
+    return [
+        tag
+        for tag, applies in (
+            (TAG_BANNED_IN_SOURCE, banned_in_source),
+            (TAG_BANNED_IN_FB, banned_in_fb),
+            (TAG_SUSPICIOUS, suspicious),
+        )
+        if applies
+    ]
 
 
 def _domain_line(item: DomainWithChecks) -> str:
