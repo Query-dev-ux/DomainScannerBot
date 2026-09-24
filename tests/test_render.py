@@ -92,39 +92,58 @@ def test_no_on_off_vocabulary(text: str):
         assert word not in lowered, (word, text)
 
 
-def test_alert_card_layout():
+def test_card_is_headline_plus_domain_and_source():
     text = render.render_report(_report(), alert=True)
-    lines = text.split("\n")
-    assert lines[0] == "<b>Домен зашкварен</b>"
-    assert lines[1] == "<code>wintonic.living</code>"
-    assert lines[2] == "<i>SkakApp · было: чисто</i>"
-    assert "<b>DNS-блоклисты</b> — в блоклистах: SURBL" in text  # problem is bold
-    assert lines[-1] == "Google Safe Browsing — нет совпадений"  # clean stays plain
-    assert "MSK" not in text and "18.09" not in text  # Telegram shows the time itself
+    assert text == (
+        "<b>Домен под подозрением</b>\n"
+        "<code>wintonic.living</code> SkakApp"
+    )
 
 
-def test_no_previous_state_when_domain_was_never_checked():
-    text = render.render_report(_report(previous_verdict=Verdict.UNKNOWN), alert=True)
+def test_card_headline_names_a_platform_ban():
+    report = _report(outcomes=[CheckOutcome("source_status", Verdict.FLAGGED, summary="забанен")])
+    assert render.report_headline(report) == "Домен заблокирован в PWA сервисе"
+
+
+def test_card_headline_names_a_facebook_block():
+    report = _report(outcomes=[CheckOutcome("facebook", Verdict.FLAGGED, summary="блок")])
+    assert render.report_headline(report) == "Домен заблокирован в FB"
+
+
+def test_platform_ban_wins_over_facebook_in_the_headline():
+    report = _report(outcomes=[
+        CheckOutcome("facebook", Verdict.FLAGGED, summary="блок"),
+        CheckOutcome("source_status", Verdict.FLAGGED, summary="забанен"),
+    ])
+    assert render.report_headline(report) == "Домен заблокирован в PWA сервисе"
+
+
+def test_everything_else_is_under_suspicion():
+    for checks in (
+        [CheckOutcome("dns_rbl", Verdict.FLAGGED, summary="в блоклистах")],
+        [CheckOutcome("google_safe_browsing", Verdict.FLAGGED, summary="GSB")],
+        [CheckOutcome("facebook", Verdict.SUSPICIOUS, summary="не прочитал")],
+    ):
+        assert render.report_headline(_report(outcomes=checks)) == "Домен под подозрением"
+
+
+def test_clean_and_error_cards_keep_their_own_headline():
+    clean = _report(verdict=Verdict.CLEAN, outcomes=[CheckOutcome("dns_rbl", Verdict.CLEAN)])
+    failed = _report(verdict=Verdict.ERROR, outcomes=[CheckOutcome("dns_rbl", Verdict.ERROR)])
+    assert render.report_headline(clean) == "Домен чистый"
+    assert render.report_headline(failed) == "Не удалось проверить"
+
+
+def test_card_carries_no_check_details_or_previous_state():
+    text = render.render_report(_report(), alert=True)
     assert "было" not in text
-    assert text.split("\n")[2] == "<i>SkakApp</i>"
-
-
-def test_unchanged_check_card_omits_previous_state():
-    text = render.render_report(_report(changed=False, previous_verdict=Verdict.FLAGGED))
-    assert "было:" not in text
+    assert "DNS-блоклисты" not in text and "SURBL" not in text
 
 
 def test_untrusted_text_is_escaped():
-    evil = CheckOutcome("facebook", Verdict.ERROR, error="<script>alert(1)</script>")
-    text = render.render_report(_report(domain="a<b>.com", outcomes=[evil]))
-    assert "<script>" not in text and "&lt;script&gt;" in text
+    text = render.render_report(_report(domain="a<b>.com"))
+    assert "<script>" not in text
     assert "a&lt;b&gt;.com" in text
-
-
-def test_long_details_are_clipped():
-    long = CheckOutcome("facebook", Verdict.ERROR, error="x" * 1000)
-    text = render.render_report(_report(outcomes=[long]))
-    assert "x" * 1000 not in text and "…" in text
 
 
 def test_status_is_just_the_count_and_verdicts():
@@ -152,19 +171,24 @@ def test_domain_count_plural(n: int, word: str):
     assert render._domains(n) == f"{n} {word}"
 
 
-def test_list_groups_by_source_in_order():
+def test_list_splits_watched_from_muted_and_groups_by_source():
     items = [
         _domain("b.com", Verdict.SUSPICIOUS, source=DomainSource.SKAKAPP),
         _domain("a.com", Verdict.SUSPICIOUS, source=DomainSource.PWA),
-        _domain("m.com", Verdict.SUSPICIOUS, source=DomainSource.MANUAL),
+        _domain("muted.com", Verdict.FLAGGED, source=DomainSource.PWA, monitoring_enabled=False),
     ]
     text = render.render_list(items, "Проблемные домены", empty_hint="—")
     assert text.split("\n")[0] == "<b>Проблемные домены</b> · 3"
-    pwa, skak, manual = (
-        text.index(f"<b>{name}</b>") for name in ("PWApartners", "SkakApp", "вручную")
-    )
-    assert pwa < skak < manual
-    assert text.index("a.com") < text.index("b.com")
+    assert "<b>Новые</b> · 2" in text
+    assert "<b>Не отслеживаемые</b> · 1" in text
+    assert text.index("<b>Новые</b>") < text.index("<b>Не отслеживаемые</b>")
+    assert text.index("a.com") < text.index("b.com")  # PWApartners before SkakApp
+    assert text.index("<b>Не отслеживаемые</b>") < text.index("muted.com")
+
+
+def test_sections_with_nothing_in_them_are_skipped():
+    text = render.render_list([_domain("a.com", Verdict.SUSPICIOUS)], "Проблемные", empty_hint="—")
+    assert "Не отслеживаемые" not in text
 
 
 def test_tags_name_the_actual_problem():
@@ -184,8 +208,8 @@ def test_tags_name_the_actual_problem():
     assert render.domain_tags(suspicious) == ["Под подозрением"]
 
     text = render.render_list([banned_in_source, both], "Проблемные домены", empty_hint="—")
-    assert "<code>s.com</code> — <i>Заблокирован в PWA сервисе</i>" in text
-    assert "<code>sf.com</code> — <i>Заблокирован в PWA сервисе · Заблокирован в FB</i>" in text
+    assert "<code>s.com</code> — Заблокирован в PWA сервисе" in text
+    assert "<code>sf.com</code> — Заблокирован в PWA сервисе · Заблокирован в FB" in text
 
 
 def test_a_domain_can_carry_all_three_tags():

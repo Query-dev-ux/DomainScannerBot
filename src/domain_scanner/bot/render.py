@@ -11,7 +11,6 @@ from __future__ import annotations
 import html
 from collections.abc import Sequence
 
-from domain_scanner.checkers.base import CheckOutcome
 from domain_scanner.db.models import DomainSource, Verdict
 from domain_scanner.labels import (
     VERDICT_ORDER,
@@ -29,6 +28,9 @@ LIST_LIMIT = 60
 # Telegram rejects messages over 4096 chars; leave room for the header/footer.
 MESSAGE_BUDGET = 3600
 DETAIL_LIMIT = 180
+
+# Verdicts that put a domain on the problem list.
+_PROBLEM = (Verdict.SUSPICIOUS, Verdict.FLAGGED)
 
 
 def _e(text: object) -> str:
@@ -82,33 +84,24 @@ def render_startup(sources: Sequence[str], checkers: Sequence[str]) -> str:
 # ── Scan reports (alert + /check card) ───────────────────────────────────────
 
 
-def _outcome_line(o: CheckOutcome) -> str:
-    name = _e(checker_label(o.checker))
-    # Only what needs attention is bold; a clean check stays quiet.
-    if o.verdict is not Verdict.CLEAN:
-        name = f"<b>{name}</b>"
-    return f"{name} — {_e(_clip(o.summary or o.error or '—'))}"
+def report_headline(report: ScanReport) -> str:
+    """The one thing wrong with the domain, named the way /list names it."""
+    checks = {o.checker: o.verdict for o in report.outcomes}
+    if checks.get("source_status") is Verdict.FLAGGED:
+        return "Домен заблокирован в PWA сервисе"
+    if checks.get("facebook") is Verdict.FLAGGED:
+        return "Домен заблокирован в FB"
+    if report.verdict in _PROBLEM:
+        return "Домен под подозрением"
+    return VERDICT_TITLE[report.verdict]
 
 
 def render_report(report: ScanReport, *, alert: bool = False) -> str:
-    """Card for one scanned domain.
-
-    Shows the previous state only when the domain had a real one and it changed —
-    "было: не проверен" says nothing. No timestamp: Telegram shows the message time.
-    """
-    meta = [_e(source_label(report.source))]
-    prev = report.previous_verdict
-    if (alert or report.changed) and prev is not Verdict.UNKNOWN and prev is not report.verdict:
-        meta.append(f"было: {VERDICT_RU[prev]}")
-
-    lines = [
-        f"<b>{VERDICT_TITLE[report.verdict]}</b>",
-        f"<code>{_e(report.domain)}</code>",
-        f"<i>{' · '.join(meta)}</i>",
-    ]
-    if report.outcomes:
-        lines += ["", *(_outcome_line(o) for o in report.outcomes)]
-    return "\n".join(lines)
+    """Card for one scanned domain: what is wrong, which domain, whose it is."""
+    return (
+        f"<b>{report_headline(report)}</b>\n"
+        f"<code>{_e(report.domain)}</code> {_e(source_label(report.source))}"
+    )
 
 
 def render_checking(domain: str) -> str:
@@ -147,8 +140,6 @@ TAG_BANNED_IN_SOURCE = "Заблокирован в PWA сервисе"
 TAG_BANNED_IN_FB = "Заблокирован в FB"
 TAG_SUSPICIOUS = "Под подозрением"
 
-_PROBLEM = (Verdict.SUSPICIOUS, Verdict.FLAGGED)
-
 
 def domain_tags(item: DomainWithChecks) -> list[str]:
     """What is wrong with the domain, from its last scan.
@@ -181,9 +172,13 @@ def domain_tags(item: DomainWithChecks) -> list[str]:
     ]
 
 
+SECTION_WATCHED = "Новые"
+SECTION_MUTED = "Не отслеживаемые"
+
+
 def _domain_line(item: DomainWithChecks) -> str:
     tags = domain_tags(item)
-    suffix = f" — <i>{_e(' · '.join(tags))}</i>" if tags else ""
+    suffix = f" — {_e(' · '.join(tags))}" if tags else ""
     return f"<code>{_e(item.domain.name)}</code>{suffix}"
 
 
@@ -191,33 +186,52 @@ def _worst_first(item: DomainWithChecks) -> tuple[int, str]:
     return -item.domain.current_verdict.severity, item.domain.name
 
 
-def render_list(items: Sequence[DomainWithChecks], title: str, *, empty_hint: str) -> str:
-    """Problem domains grouped by the platform they come from."""
-    if not items:
-        return f"<b>{_e(title)}</b>\n\n{empty_hint}"
-
+def _by_source(items: Sequence[DomainWithChecks]) -> list[tuple[DomainSource, list]]:
     groups: dict[DomainSource, list[DomainWithChecks]] = {}
     for item in items:
         groups.setdefault(item.domain.source, []).append(item)
     order = [s for s in SOURCE_ORDER if s in groups]
     order += [s for s in groups if s not in SOURCE_ORDER]
+    return [(s, sorted(groups[s], key=_worst_first)) for s in order]
+
+
+def render_list(items: Sequence[DomainWithChecks], title: str, *, empty_hint: str) -> str:
+    """Problem domains: still watched first, then the ones muted by hand.
+
+    Inside each section the domains are grouped by the platform they come from.
+    """
+    if not items:
+        return f"<b>{_e(title)}</b>\n\n{empty_hint}"
+
+    sections = [
+        (SECTION_WATCHED, [i for i in items if i.domain.monitoring_enabled]),
+        (SECTION_MUTED, [i for i in items if not i.domain.monitoring_enabled]),
+    ]
 
     lines = [f"<b>{_e(title)}</b> · {len(items)}"]
     size = len(lines[0])
     shown = 0
-    for source in order:
-        header = f"<b>{_e(source_label(source))}</b>"
+    for section, section_items in sections:
+        if not section_items:
+            continue
+        header = f"<b>{section}</b> · {len(section_items)}"
         if shown >= LIST_LIMIT or size + len(header) > MESSAGE_BUDGET:
             break
         lines += ["", header]
         size += len(header) + 2
-        for item in sorted(groups[source], key=_worst_first):
-            line = _domain_line(item)
-            if shown >= LIST_LIMIT or size + len(line) > MESSAGE_BUDGET:
+        for source, group in _by_source(section_items):
+            source_line = f"<i>{_e(source_label(source))}</i>"
+            if shown >= LIST_LIMIT or size + len(source_line) > MESSAGE_BUDGET:
                 break
-            lines.append(line)
-            size += len(line) + 1
-            shown += 1
+            lines.append(source_line)
+            size += len(source_line) + 1
+            for item in group:
+                line = _domain_line(item)
+                if shown >= LIST_LIMIT or size + len(line) > MESSAGE_BUDGET:
+                    break
+                lines.append(line)
+                size += len(line) + 1
+                shown += 1
     if shown < len(items):
         lines += ["", f"<i>И ещё {len(items) - shown}</i>"]
     return "\n".join(lines)
