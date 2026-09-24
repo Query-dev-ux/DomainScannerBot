@@ -212,20 +212,27 @@ def test_tags_name_the_actual_problem():
     assert "<code>sf.com</code> — Заблокирован в PWA сервисе · Заблокирован в FB" in text
 
 
-def test_a_domain_can_carry_all_three_tags():
+def test_a_ban_replaces_the_suspicion_tag():
+    # The domain is banned in the platform, blocked in FB and no longer resolves —
+    # the two bans are named, "Под подозрением" would only repeat them.
     item = _domain(
         "all.com", Verdict.FLAGGED,
         {
             "source_status": Verdict.FLAGGED,
             "facebook": Verdict.FLAGGED,
-            "dns_rbl": Verdict.FLAGGED,
+            "dns_rbl": Verdict.SUSPICIOUS,
         },
     )
     assert render.domain_tags(item) == [
         "Заблокирован в PWA сервисе",
         "Заблокирован в FB",
-        "Под подозрением",
     ]
+
+
+def test_one_ban_alone_also_hides_the_suspicion_tag():
+    item = _domain("s.com", Verdict.FLAGGED,
+                   {"source_status": Verdict.FLAGGED, "dns_rbl": Verdict.SUSPICIOUS})
+    assert render.domain_tags(item) == ["Заблокирован в PWA сервисе"]
 
 
 def test_everything_other_than_a_ban_reads_as_suspicious():

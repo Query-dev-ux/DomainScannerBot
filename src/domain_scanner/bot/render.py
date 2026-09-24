@@ -144,9 +144,11 @@ TAG_SUSPICIOUS = "Под подозрением"
 def domain_tags(item: DomainWithChecks) -> list[str]:
     """What is wrong with the domain, from its last scan.
 
-    A ban in the platform and a block in Facebook get named; everything else —
-    blocklists, Safe Browsing, a page Facebook could not read, an expired domain —
-    is "Под подозрением". All three can apply at once.
+    A ban in the platform and a block in Facebook get named, and both can apply
+    at once. "Под подозрением" covers everything else — blocklists, Safe Browsing,
+    a page Facebook could not read, an expired domain — and is dropped when a ban
+    is already named: a banned domain usually stops resolving too, and repeating
+    that adds nothing to a reason that is already stated.
     """
     banned_in_source = banned_in_fb = suspicious = False
     for checker, verdict in item.checks.items():
@@ -166,7 +168,7 @@ def domain_tags(item: DomainWithChecks) -> list[str]:
         for tag, applies in (
             (TAG_BANNED_IN_SOURCE, banned_in_source),
             (TAG_BANNED_IN_FB, banned_in_fb),
-            (TAG_SUSPICIOUS, suspicious),
+            (TAG_SUSPICIOUS, suspicious and not (banned_in_source or banned_in_fb)),
         )
         if applies
     ]
