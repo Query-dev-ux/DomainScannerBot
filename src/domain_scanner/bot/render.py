@@ -245,7 +245,7 @@ def render_list(items: Sequence[DomainWithChecks], title: str, *, empty_hint: st
             size += len(source_line) + 1
             for owner, owned in _by_owner(group):
                 if owner:
-                    owner_line = f"  <i>{_e(owner)}</i>"
+                    owner_line = f"  {_e(owner)}"
                     if shown >= LIST_LIMIT or size + len(owner_line) > MESSAGE_BUDGET:
                         break
                     lines.append(owner_line)
