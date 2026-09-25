@@ -320,17 +320,22 @@ def test_list_groups_domains_under_their_owner():
         _domain("d.com", Verdict.SUSPICIOUS, source=DomainSource.SKAKAPP, owner="petr"),
     ]
     text = render.render_list(items, "Проблемные домены", empty_hint="—")
-    lines = text.split("\n")
-    assert lines[3:10] == [
+    assert text.split("\n") == [
+        "<b>Проблемные домены</b> · 4",
         "",
-        "<b>PWApartners</b>",
-        "<i>petr</i>",          # owners alphabetically inside the source
-        "  <code>c.com</code> — Под подозрением",
-        "",                      # blank line between owners, so it reads as blocks
-        "<i>vlad_celestial</i>",
-        "  <code>b.com</code> — Заблокирован в FB",   # worst first inside an owner
+        "",
+        "<b>Новые</b> · 4",
+        "",
+        "<blockquote>PWApartners</blockquote>",
+        "  <i>petr</i>",          # owners alphabetically inside the source
+        "    <code>c.com</code> — Под подозрением",
+        "  <i>vlad_celestial</i>",
+        "    <code>b.com</code> — Заблокирован в FB",  # worst first inside an owner
+        "    <code>a.com</code> — Под подозрением",
+        "<blockquote>SkakApp</blockquote>",
+        "  <i>petr</i>",
+        "    <code>d.com</code> — Под подозрением",
     ]
-    assert text.index("<b>PWApartners</b>") < text.index("<b>SkakApp</b>")
 
 
 def test_domains_without_an_owner_are_listed_without_a_heading():
@@ -339,6 +344,6 @@ def test_domains_without_an_owner_are_listed_without_a_heading():
         _domain("orphan.com", Verdict.SUSPICIOUS),
     ]
     text = render.render_list(items, "Проблемные домены", empty_hint="—")
-    # The ownerless domain sits at source level, last, with no owner line above it.
-    assert text.split("\n")[-1] == "<code>orphan.com</code> — Под подозрением"
-    assert text.count("<i>petr</i>") == 1
+    # Ownerless domains come last, one step shallower, with no owner line above.
+    assert text.split("\n")[-1] == "   <code>orphan.com</code> — Под подозрением"
+    assert text.count("  <i>petr</i>") == 1

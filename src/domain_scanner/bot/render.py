@@ -233,28 +233,26 @@ def render_list(items: Sequence[DomainWithChecks], title: str, *, empty_hint: st
         header = f"<b>{section}</b> · {len(section_items)}"
         if shown >= LIST_LIMIT or size + len(header) > MESSAGE_BUDGET:
             break
-        lines += ["", header]
-        size += len(header) + 2
+        # Two blank lines set a section apart; one separates it from its first source.
+        lines += ["", "", header, ""]
+        size += len(header) + 4
         for source, group in _by_source(section_items):
-            source_line = f"<b>{_e(source_label(source))}</b>"
+            # A quote block makes the platform the obvious top level of the tree.
+            source_line = f"<blockquote>{_e(source_label(source))}</blockquote>"
             if shown >= LIST_LIMIT or size + len(source_line) > MESSAGE_BUDGET:
                 break
-            # A blank line before every block keeps the list from reading as one lump.
-            lines += ["", source_line]
-            size += len(source_line) + 2
-            for position, (owner, owned) in enumerate(_by_owner(group)):
-                if position:
-                    lines.append("")
-                    size += 1
+            lines.append(source_line)
+            size += len(source_line) + 1
+            for owner, owned in _by_owner(group):
                 if owner:
-                    owner_line = f"<i>{_e(owner)}</i>"
+                    owner_line = f"  <i>{_e(owner)}</i>"
                     if shown >= LIST_LIMIT or size + len(owner_line) > MESSAGE_BUDGET:
                         break
                     lines.append(owner_line)
                     size += len(owner_line) + 1
                 for item in owned:
-                    # Indented under their owner; ownerless domains sit at source level.
-                    line = ("  " if owner else "") + _domain_line(item)
+                    # Under an owner, or a step shallower when there is none.
+                    line = ("    " if owner else "   ") + _domain_line(item)
                     if shown >= LIST_LIMIT or size + len(line) > MESSAGE_BUDGET:
                         break
                     lines.append(line)
