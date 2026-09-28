@@ -77,7 +77,7 @@ def test_garbage_is_refused_rather_than_guessed():
 # ── куда уходит алерт ────────────────────────────────────────────────────────
 
 
-async def test_alert_goes_to_the_owners_group():
+async def test_alert_goes_to_the_owners_group_and_is_copied_to_the_main_one():
     bot = FakeBot()
 
     async def lookup(report: ScanReport) -> int | None:
@@ -85,8 +85,19 @@ async def test_alert_goes_to_the_owners_group():
 
     notifier = Notifier(bot, DEFAULT_CHAT, 42, route_lookup=lookup)
     await notifier.notify_scan(_report())
-    # The forum topic belongs to the default group, so a routed alert has none.
-    assert bot.sent == [(TEAM_CHAT, None)]
+    # The forum topic belongs to the default group, so the routed copy has none.
+    assert bot.sent == [(TEAM_CHAT, None), (DEFAULT_CHAT, 42)]
+
+
+async def test_a_rule_pointing_at_the_main_group_does_not_double_the_alert():
+    bot = FakeBot()
+
+    async def lookup(report: ScanReport) -> int | None:
+        return DEFAULT_CHAT
+
+    notifier = Notifier(bot, DEFAULT_CHAT, 42, route_lookup=lookup)
+    await notifier.notify_scan(_report())
+    assert bot.sent == [(DEFAULT_CHAT, 42)]
 
 
 async def test_without_a_rule_the_alert_goes_to_the_default_group():
@@ -139,7 +150,7 @@ def test_routes_are_listed_by_platform():
         "<blockquote>SkakApp</blockquote>",
         f"  rustam_celestial → <code>{TEAM_CHAT}</code>",
         "",
-        f"<i>Остальные — в основную группу, <code>{DEFAULT_CHAT}</code></i>",
+        f"<i>Копии всех алертов — в основную группу, <code>{DEFAULT_CHAT}</code></i>",
     ]
 
 

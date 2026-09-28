@@ -20,9 +20,11 @@ RouteLookup = Callable[[ScanReport], Awaitable[int | None]]
 class Notifier:
     """Posts into the alert group (optionally into one forum topic).
 
-    An alert about a single domain can be routed to the group of whoever owns it
-    (see /route); everything else — sync failures, crashes, the startup line —
-    goes to the default chat, because it belongs to nobody in particular.
+    An alert about a single domain also goes to the group of whoever owns it
+    (see /route) — the default chat keeps a copy of everything, so nothing is
+    only visible to one team. Everything else — sync failures, crashes, the
+    startup line — belongs to nobody in particular and goes to the default chat
+    alone.
     """
 
     def __init__(
@@ -69,9 +71,11 @@ class Notifier:
 
     async def notify_scan(self, report: ScanReport) -> None:
         markup = domain_keyboard(report.domain_id) if report.domain_id else None
-        await self._send(
-            render_report(report, alert=True), markup, await self._route_for(report)
-        )
+        text = render_report(report, alert=True)
+        owners_chat = await self._route_for(report)
+        if owners_chat is not None and owners_chat != self.chat_id:
+            await self._send(text, markup, owners_chat)
+        await self._send(text, markup)
 
     async def notify_text(self, text: str) -> None:
         await self._send(text)

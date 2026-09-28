@@ -322,7 +322,10 @@ def render_routes(routes: Sequence, default_chat_id: int) -> str:
             continue
         lines.append(f"<blockquote>{_e(source_label(source))}</blockquote>")
         lines += [f"  {_e(r.owner)} → {_route_target(r)}" for r in group]
-    lines += ["", f"<i>Остальные — в основную группу, <code>{default_chat_id}</code></i>"]
+    lines += [
+        "",
+        f"<i>Копии всех алертов — в основную группу, <code>{default_chat_id}</code></i>",
+    ]
     return "\n".join(lines)
 
 
