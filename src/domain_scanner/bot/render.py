@@ -182,7 +182,7 @@ SECTION_WATCHED = "Новые"
 SECTION_MUTED = "Не отслеживаемые"
 
 # Heading for domains the platform gave us no owner for.
-OWNER_UNKNOWN = "без владельца"
+OWNER_UNKNOWN = "Без владельца"
 
 
 def _domain_line(item: DomainWithChecks) -> str:
