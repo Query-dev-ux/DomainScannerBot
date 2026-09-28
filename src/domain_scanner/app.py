@@ -17,7 +17,7 @@ from domain_scanner.config import Settings, get_settings
 from domain_scanner.db import init_engine, shutdown_engine
 from domain_scanner.logging import configure_logging, get_logger
 from domain_scanner.scheduler import register_jobs
-from domain_scanner.services import DomainSyncService, ScannerService
+from domain_scanner.services import DomainSyncService, ScannerService, route_for_report
 from domain_scanner.sources import build_providers
 
 log = get_logger(__name__)
@@ -33,7 +33,12 @@ class Application:
                 link_preview=LinkPreviewOptions(is_disabled=True),
             ),
         )
-        self.notifier = Notifier(self.bot, settings.alert_chat_id, settings.alert_thread_id)
+        self.notifier = Notifier(
+            self.bot,
+            settings.alert_chat_id,
+            settings.alert_thread_id,
+            route_lookup=route_for_report,
+        )
         self.scanner = ScannerService(
             build_checkers(settings), concurrency=settings.scan_concurrency
         )

@@ -161,3 +161,31 @@ class SyncLog(Base):
     updated: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     deactivated: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class AlertRoute(TimestampMixin, Base):
+    """Which Telegram chat gets the alerts for one platform user's domains.
+
+    A person has a different login in each platform, so a route is keyed by
+    (source, owner): one chat usually collects several rows. Domains with no
+    route — and everything that is not about a single domain — go to
+    ALERT_CHAT_ID.
+    """
+
+    __tablename__ = "alert_routes"
+    __table_args__ = (
+        UniqueConstraint("source", "owner_key", name="uq_alert_routes_source_owner"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[DomainSource] = mapped_column(domain_source_enum, nullable=False)
+    # owner as the platform spells it (what /list shows), plus the lowercased
+    # key the lookup matches on: logins are typed by hand, case and all.
+    owner: Mapped[str] = mapped_column(String(64), nullable=False)
+    owner_key: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    chat_title: Mapped[str | None] = mapped_column(String(255))
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<AlertRoute {self.source.value}:{self.owner} -> {self.chat_id}>"

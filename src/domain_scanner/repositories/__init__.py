@@ -3,5 +3,12 @@ from domain_scanner.repositories.domains import (
     DomainStats,
     DomainWithChecks,
 )
+from domain_scanner.repositories.routes import AlertRouteRepository, owner_key
 
-__all__ = ["DomainRepository", "DomainStats", "DomainWithChecks"]
+__all__ = [
+    "AlertRouteRepository",
+    "DomainRepository",
+    "DomainStats",
+    "DomainWithChecks",
+    "owner_key",
+]

@@ -54,6 +54,7 @@ BOT_COMMANDS: tuple[tuple[str, str], ...] = (
     ("check", "Проверить домен"),
     ("scan_now", "Проверить все домены сейчас"),
     ("sync_now", "Обновить списки из источников"),
+    ("routes", "Куда уходят уведомления"),
     ("help", "Справка"),
 )
 
@@ -67,7 +68,12 @@ def render_help() -> str:
         "\n"
         "/check <code>домен</code> — проверить сейчас\n"
         "/scan_now — проверить все домены сейчас\n"
-        "/sync_now — обновить списки из источников"
+        "/sync_now — обновить списки из источников\n"
+        "\n"
+        "/routes — куда уходят уведомления\n"
+        "/route <code>id группы имя_PWApartners имя_SkakApp</code> — направить домены "
+        "владельца в группу\n"
+        "/route_del <code>имя</code> — убрать правило"
     )
 
 
@@ -262,6 +268,61 @@ def render_list(items: Sequence[DomainWithChecks], title: str, *, empty_hint: st
                     shown += 1
     if shown < len(items):
         lines += ["", f"<i>И ещё {len(items) - shown}</i>"]
+    return "\n".join(lines)
+
+
+# ── /route, /routes ──────────────────────────────────────────────────────────
+
+ROUTES_TITLE = "Маршруты уведомлений"
+
+
+def render_route_usage() -> str:
+    return (
+        f"<b>{ROUTES_TITLE}</b>\n\n"
+        "<code>/route id_группы имя_PWApartners имя_SkakApp</code>\n"
+        "Дефис вместо имени, если в этой платформе человека нет.\n"
+        "Имена — те же, что в /list.\n\n"
+        "<code>/route_del имя</code> — убрать правило\n"
+        "/routes — список правил"
+    )
+
+
+def render_route_unreachable(chat_id: int) -> str:
+    return (
+        f"Не получилось написать в <code>{chat_id}</code>.\n"
+        "Добавьте бота в эту группу и проверьте id."
+    )
+
+
+def render_route_unknown(name: str) -> str:
+    return f"Правила для <code>{_e(name)}</code> нет."
+
+
+def _route_target(route) -> str:  # AlertRoute
+    return _e(route.chat_title) if route.chat_title else f"<code>{route.chat_id}</code>"
+
+
+def render_routes(routes: Sequence, default_chat_id: int) -> str:
+    """Who goes where, grouped by platform the same way /list is."""
+    if not routes:
+        return (
+            f"<b>{ROUTES_TITLE}</b>\n\n"
+            "Правил нет — все уведомления идут в основную группу.\n\n"
+            + render_route_usage().split("\n\n", 1)[1]
+        )
+
+    groups: dict[DomainSource, list] = {}
+    for route in routes:
+        groups.setdefault(route.source, []).append(route)
+
+    lines = [f"<b>{ROUTES_TITLE}</b>", ""]
+    for source in SOURCE_ORDER:
+        group = groups.get(source)
+        if not group:
+            continue
+        lines.append(f"<blockquote>{_e(source_label(source))}</blockquote>")
+        lines += [f"  {_e(r.owner)} → {_route_target(r)}" for r in group]
+    lines += ["", f"<i>Остальные — в основную группу, <code>{default_chat_id}</code></i>"]
     return "\n".join(lines)
 
 
