@@ -12,6 +12,9 @@ from domain_scanner.utils import normalize_domain
 
 log = get_logger(__name__)
 
+# A paged endpoint that keeps answering is a bug somewhere; stop rather than spin.
+MAX_PAGES = 100
+
 def parse_teamates(teamates: list[dict[str, Any]]) -> dict[str, str]:
     """uuid -> display name, from `GET /dash_api/team/list`."""
     names = {}
@@ -103,6 +106,7 @@ class PwaPartnersProvider:
         here only mean the domains arrive without an owner.
         """
         owners: dict[str, str] = {}
+        received = 0
         page = 1
         try:
             while True:
@@ -111,8 +115,9 @@ class PwaPartnersProvider:
                 )
                 teamates = data.get("teamates") or []
                 owners.update(parse_teamates(teamates))
+                received += len(teamates)
                 total = int(data.get("total") or 0)
-                if not teamates or page * 200 >= total:
+                if not teamates or received >= total or page >= MAX_PAGES:
                     break
                 page += 1
         except Exception as exc:
@@ -125,6 +130,7 @@ class PwaPartnersProvider:
             headers=self._headers, timeout=self._timeout
         ) as session:
             owners = await self._fetch_owners(session)
+            received = 0
             page = 1
             while True:
                 data = await self._get(
@@ -134,8 +140,12 @@ class PwaPartnersProvider:
                 )
                 items = data.get("domains") or []
                 collected.extend(parse_domains(items, owners))
+                received += len(items)
                 total = int(data.get("total") or 0)
-                if not items or page * self._page_size >= total:
+                # The API caps the page size at its own value, so count what it
+                # actually sent: counting pages by the size we asked for walked
+                # off the end of the list and silently dropped the rest.
+                if not items or received >= total or page >= MAX_PAGES:
                     break
                 page += 1
         log.info("source.fetched", source=self.source.value, count=len(collected))

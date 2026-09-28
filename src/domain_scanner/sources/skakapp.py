@@ -13,6 +13,9 @@ from domain_scanner.utils import normalize_domain
 
 log = get_logger(__name__)
 
+# A paged endpoint that keeps answering is a bug somewhere; stop rather than spin.
+MAX_PAGES = 100
+
 
 def basic_auth_header(login: str, password: str) -> str:
     # Built by hand: aiohttp.BasicAuth is deprecated and goes away in aiohttp 4.
@@ -167,6 +170,7 @@ class SkakAppProvider:
         async with aiohttp.ClientSession(
             timeout=self._timeout, headers=self._headers
         ) as session:
+            received = 0
             page = 1
             while True:
                 data = await self._post(
@@ -176,8 +180,11 @@ class SkakAppProvider:
                 )
                 pwas = data.get("data") or []
                 collected.extend(parse_pwas(pwas))
+                received += len(pwas)
                 total = int(data.get("total") or 0)
-                if not pwas or page * self._page_size >= total:
+                # `total` counts PWAs, and the API may send smaller pages than we
+                # ask for, so page through by what arrived rather than by pageSize.
+                if not pwas or received >= total or page >= MAX_PAGES:
                     break
                 page += 1
         log.info("source.fetched", source=self.source.value, count=len(collected))

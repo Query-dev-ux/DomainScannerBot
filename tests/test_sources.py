@@ -6,7 +6,7 @@ from domain_scanner.checkers.source_status import check_source_status
 from domain_scanner.config import Settings
 from domain_scanner.db.models import DomainSource, Verdict
 from domain_scanner.sources import SkakAppProvider, SourceDomain, build_providers, dedupe
-from domain_scanner.sources.pwa_partners import parse_domains
+from domain_scanner.sources.pwa_partners import PwaPartnersProvider, parse_domains
 from domain_scanner.sources.skakapp import domain_status, parse_pwas
 
 
@@ -152,6 +152,70 @@ def test_skakapp_sends_login_and_password_as_basic_auth():
 
 def test_default_is_to_check_hourly():
     assert _settings().scan_interval_minutes == 60
+
+
+# -- paging: the API decides how big a page is ---------------------------------
+
+SERVER_PAGE = 100  # what PWApartners really sends, whatever page_size we ask for
+
+
+def _capped_page(total: int, page: int, size: int = SERVER_PAGE) -> list[dict]:
+    start = (page - 1) * size
+    return [
+        {"uuid": f"u{i}", "domain": f"d{i}.com", "status": 1}
+        for i in range(start, min(start + size, total))
+    ]
+
+
+async def test_pwa_partners_pages_to_the_end_even_with_a_capped_page_size():
+    # The bot asked for pages of 200, got 100, and counted pages as if it had got
+    # 200 -- so it stopped at 300 of 421 domains and never saw the rest, bans
+    # included. Paging must follow what arrived, not what we asked for.
+    total = 421
+    provider = PwaPartnersProvider("https://x/api", "k", "team", "teamate", page_size=200)
+    asked: list[int] = []
+
+    async def fake_get(session, path, params):
+        if path == "/dash_api/team/list":
+            return {"teamates": [], "total": 0}
+        page = params["page"]
+        asked.append(page)
+        return {"domains": _capped_page(total, page), "total": total}
+
+    provider._get = fake_get  # type: ignore[method-assign]
+    got = await provider.fetch_domains()
+
+    assert len(got) == total
+    assert asked == [1, 2, 3, 4, 5]
+
+
+async def test_pwa_partners_stops_when_a_page_comes_back_empty():
+    provider = PwaPartnersProvider("https://x/api", "k", "team", "teamate")
+
+    async def fake_get(session, path, params):
+        if path == "/dash_api/team/list":
+            return {"teamates": [], "total": 0}
+        # A total the endpoint never delivers must not loop forever.
+        return {"domains": _capped_page(150, params["page"]), "total": 10_000}
+
+    provider._get = fake_get  # type: ignore[method-assign]
+    assert len(await provider.fetch_domains()) == 150
+
+
+async def test_skakapp_pages_by_what_arrived_too():
+    provider = SkakAppProvider("https://x/api", login="me", password="pw", page_size=500)
+
+    async def fake_post(session, path, body):
+        page = body["page"]
+        start = (page - 1) * SERVER_PAGE
+        data = [
+            {"id": f"p{i}", "domains": [{"cid": f"c{i}", "domain": f"d{i}.com"}]}
+            for i in range(start, min(start + SERVER_PAGE, 250))
+        ]
+        return {"data": data, "total": 250}
+
+    provider._post = fake_post  # type: ignore[method-assign]
+    assert len(await provider.fetch_domains()) == 250
 
 
 # ── кто владеет доменом ──────────────────────────────────────────────────────
