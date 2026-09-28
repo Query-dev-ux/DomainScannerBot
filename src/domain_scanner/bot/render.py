@@ -181,6 +181,9 @@ def domain_tags(item: DomainWithChecks) -> list[str]:
 SECTION_WATCHED = "Новые"
 SECTION_MUTED = "Не отслеживаемые"
 
+# Heading for domains the platform gave us no owner for.
+OWNER_UNKNOWN = "без владельца"
+
 
 def _domain_line(item: DomainWithChecks) -> str:
     tags = domain_tags(item)
@@ -202,7 +205,7 @@ def _by_source(items: Sequence[DomainWithChecks]) -> list[tuple[DomainSource, li
 
 
 def _by_owner(items: Sequence[DomainWithChecks]) -> list[tuple[str | None, list]]:
-    """Owners alphabetically; domains with no known owner come last, unlabelled."""
+    """Owners alphabetically; domains with no known owner come last, under None."""
     groups: dict[str | None, list[DomainWithChecks]] = {}
     for item in items:
         groups.setdefault(item.domain.owner or None, []).append(item)
@@ -244,15 +247,14 @@ def render_list(items: Sequence[DomainWithChecks], title: str, *, empty_hint: st
             lines.append(source_line)
             size += len(source_line) + 1
             for owner, owned in _by_owner(group):
-                if owner:
-                    owner_line = f"  {_e(owner)}"
-                    if shown >= LIST_LIMIT or size + len(owner_line) > MESSAGE_BUDGET:
-                        break
-                    lines.append(owner_line)
-                    size += len(owner_line) + 1
+                # Always a heading, so no domain can be read as somebody else's.
+                owner_line = f"  {_e(owner) if owner else OWNER_UNKNOWN}"
+                if shown >= LIST_LIMIT or size + len(owner_line) > MESSAGE_BUDGET:
+                    break
+                lines.append(owner_line)
+                size += len(owner_line) + 1
                 for item in owned:
-                    # Under an owner, or a step shallower when there is none.
-                    line = ("    " if owner else "   ") + _domain_line(item)
+                    line = "    " + _domain_line(item)
                     if shown >= LIST_LIMIT or size + len(line) > MESSAGE_BUDGET:
                         break
                     lines.append(line)

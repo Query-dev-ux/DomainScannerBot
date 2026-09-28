@@ -338,12 +338,16 @@ def test_list_groups_domains_under_their_owner():
     ]
 
 
-def test_domains_without_an_owner_are_listed_without_a_heading():
+def test_domains_without_an_owner_get_their_own_heading():
     items = [
         _domain("known.com", Verdict.SUSPICIOUS, owner="petr"),
         _domain("orphan.com", Verdict.SUSPICIOUS),
     ]
     text = render.render_list(items, "Проблемные домены", empty_hint="—")
-    # Ownerless domains come last, one step shallower, with no owner line above.
-    assert text.split("\n")[-1] == "   <code>orphan.com</code> — Под подозрением"
+    # Ownerless domains come last, under a heading of their own: at the same indent
+    # as an owned domain they would read as belonging to the owner listed above.
+    assert text.split("\n")[-2:] == [
+        f"  {render.OWNER_UNKNOWN}",
+        "    <code>orphan.com</code> — Под подозрением",
+    ]
     assert text.count("  petr") == 1
