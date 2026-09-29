@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
+
+from domain_scanner.bot import notifier as notifier_module
 from domain_scanner.bot import render
 from domain_scanner.bot.handlers.routes import parse_route
 from domain_scanner.bot.notifier import Notifier
@@ -36,10 +40,16 @@ def _report(**kw) -> ScanReport:
 
 
 class FakeBot:
-    def __init__(self) -> None:
+    def __init__(self, fail_times: int = 0, error: Exception | None = None) -> None:
         self.sent: list[tuple[int, int | None]] = []
+        self.attempts = 0
+        self._fail_times = fail_times
+        self._error = error or TelegramNetworkError(method=None, message="reset by peer")
 
     async def send_message(self, chat_id, text, **kw):
+        self.attempts += 1
+        if self.attempts <= self._fail_times:
+            raise self._error
         self.sent.append((chat_id, kw.get("message_thread_id")))
 
 
@@ -131,6 +141,45 @@ async def test_sync_failures_are_never_routed():
     notifier = Notifier(bot, DEFAULT_CHAT, None, route_lookup=lookup)
     await notifier.notify_text("Синхронизация не удалась")
     assert bot.sent == [(DEFAULT_CHAT, None)]
+
+
+# ── обрыв связи с Telegram ───────────────────────────────────────────────────
+
+
+@pytest.fixture
+def no_waiting(monkeypatch):
+    """Take the backoff out of the test, keep the number of attempts."""
+    waited: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        waited.append(delay)
+
+    monkeypatch.setattr(notifier_module.asyncio, "sleep", fake_sleep)
+    return waited
+
+
+async def test_a_dropped_connection_is_retried(no_waiting):
+    # api.telegram.org resets connections now and then; the alert must survive it.
+    bot = FakeBot(fail_times=2)
+    await Notifier(bot, DEFAULT_CHAT).notify_text("Домен зашкварен")
+    assert bot.attempts == 3
+    assert bot.sent == [(DEFAULT_CHAT, None)]
+    assert no_waiting == list(notifier_module.SEND_BACKOFF)
+
+
+async def test_retries_do_not_go_on_forever(no_waiting):
+    bot = FakeBot(fail_times=99)
+    await Notifier(bot, DEFAULT_CHAT).notify_text("Домен зашкварен")
+    assert bot.attempts == len(notifier_module.SEND_BACKOFF) + 1
+    assert bot.sent == []
+
+
+async def test_a_rejected_message_is_not_retried(no_waiting):
+    # Removed from the chat, wrong id, broken HTML — the next attempt fails too.
+    bot = FakeBot(fail_times=99, error=TelegramBadRequest(method=None, message="chat not found"))
+    await Notifier(bot, DEFAULT_CHAT).notify_text("Домен зашкварен")
+    assert bot.attempts == 1
+    assert no_waiting == []
 
 
 # ── как это выглядит ─────────────────────────────────────────────────────────
