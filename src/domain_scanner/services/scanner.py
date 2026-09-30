@@ -5,13 +5,42 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from domain_scanner.checkers.base import Checker, CheckOutcome
-from domain_scanner.checkers.source_status import check_source_status
+from domain_scanner.checkers.source_status import (
+    NOT_LIVE_SUMMARY,
+    check_source_status,
+    is_not_live,
+)
 from domain_scanner.db import session_scope
 from domain_scanner.db.models import Domain, DomainSource, Scan, ScanCheck, Verdict
 from domain_scanner.logging import get_logger
 from domain_scanner.repositories import DomainRepository
 
 log = get_logger(__name__)
+
+
+def excuse_missing_dns(
+    outcomes: list[CheckOutcome], source: DomainSource | None, status: str | None
+) -> list[CheckOutcome]:
+    """Do not hold "no DNS" against a domain the platform has not put in service.
+
+    A domain being set up in PWApartners has no A-record yet, by design. Calling
+    that "под подозрением" alerted the group about every domain somebody was in
+    the middle of buying. The verdict becomes "не проверен" rather than "чисто":
+    without DNS the blocklists were never asked either.
+    """
+    if not is_not_live(source, status):
+        return outcomes
+    return [
+        CheckOutcome(
+            checker=o.checker,
+            verdict=Verdict.UNKNOWN,
+            summary=NOT_LIVE_SUMMARY,
+            raw=o.raw,
+        )
+        if o.checker == "dns_rbl" and (o.raw or {}).get("resolves") is False
+        else o
+        for o in outcomes
+    ]
 
 
 def aggregate_verdict(outcomes: list[CheckOutcome]) -> Verdict:
@@ -72,7 +101,9 @@ class ScannerService:
             external_status = domain.external_status
             started = datetime.now(UTC)
 
-        outcomes = await self._run_checkers(name)
+        outcomes = excuse_missing_dns(
+            await self._run_checkers(name), source, external_status
+        )
         # What the platform says comes first: it knows about a ban before DNS does.
         from_source = check_source_status(source, external_status)
         if from_source is not None:

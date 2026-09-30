@@ -89,6 +89,9 @@ class DnsRblChecker:
                 checker=self.name,
                 verdict=Verdict.SUSPICIOUS,
                 summary="домен не резолвится (NXDOMAIN / нет A-записи)",
+                # Marked so a domain the platform has not finished setting up can
+                # be excused this one verdict (see services/scanner.py).
+                raw={"resolves": False},
             )
         if failure is not None or not addresses:
             # Nothing learned about the domain — do not raise an alarm over it.

@@ -69,6 +69,9 @@ async def test_definitive_nxdomain_is_suspicious_without_retrying(monkeypatch):
     outcome = await DnsRblChecker(timeout=0.1).check("gone.example")
     assert outcome.verdict is Verdict.SUSPICIOUS
     assert "не резолвится" in (outcome.summary or "")
+    # The marker the scanner looks for when the platform is still setting the
+    # domain up (tests/test_scanner.py).
+    assert outcome.raw == {"resolves": False}
     assert resolver.calls == 1  # no point asking again
 
 

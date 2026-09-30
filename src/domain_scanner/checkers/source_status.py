@@ -31,6 +31,35 @@ _BAD_STATUSES: dict[DomainSource, dict[str, tuple[Verdict, str]]] = {
 }
 
 
+# Statuses that mean the domain is not in service: still being bought or wired
+# up, or switched off. Such a domain has no DNS yet, and that is how it is meant
+# to be — see NOT_LIVE_SUMMARY.
+_NOT_LIVE_STATUSES: dict[DomainSource, frozenset[str]] = {
+    DomainSource.PWA: frozenset(
+        {
+            "0",  # выключен
+            "2",  # ждёт покупки
+            "5",  # ожидает подключения ns1/ns2
+            "6",  # в процессе покупки
+            "7",  # куплен, ждём подвязку
+            "10",  # неудачная покупка
+            "11",  # не хватает баланса
+        }
+    ),
+    # SkakApp's is_disable: the domain is switched off in the dashboard.
+    DomainSource.SKAKAPP: frozenset({"disabled"}),
+}
+
+NOT_LIVE_SUMMARY = "домен ещё не поднят в платформе"
+
+
+def is_not_live(source: DomainSource | None, status: str | None) -> bool:
+    """The platform has not put this domain into service (or has taken it out)."""
+    if source is None or status is None:
+        return False
+    return status.strip().lower() in _NOT_LIVE_STATUSES.get(source, frozenset())
+
+
 def check_source_status(source: DomainSource | None, status: str | None) -> CheckOutcome | None:
     """None when the source says nothing bad (or says nothing at all).
 
