@@ -85,6 +85,11 @@ class DomainRepository:
         stmt = select(Domain.id).where(*_MONITORED).order_by(Domain.id)
         return list((await self._session.scalars(stmt)).all())
 
+    async def monitored(self) -> Sequence[Domain]:
+        """The same domains, whole — for judging a freshly synced status."""
+        stmt = select(Domain).where(*_MONITORED).order_by(Domain.id)
+        return (await self._session.scalars(stmt)).all()
+
     async def add_manual(self, name: str) -> tuple[Domain, bool]:
         name = name.strip().lower()
         existing = await self.get_by_name(name)

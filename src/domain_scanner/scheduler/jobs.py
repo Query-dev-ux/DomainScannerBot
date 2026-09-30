@@ -8,7 +8,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from domain_scanner.bot.render import render_job_crash, render_sync_failure
 from domain_scanner.logging import get_logger
-from domain_scanner.services.scanner import collect_monitored_domain_ids
+from domain_scanner.services.scanner import (
+    collect_monitored_domain_ids,
+    scan_source_statuses,
+)
 
 if TYPE_CHECKING:
     from domain_scanner.app import Application
@@ -28,7 +31,29 @@ FIRST_SCAN_DELAY = timedelta(seconds=120)
 MISFIRE_GRACE_SECONDS = 600
 
 
+# The sync runs often, so a source that stays down must not repeat itself every
+# few minutes: the group hears about it when the state changes, not on a loop.
+_source_was_ok: dict[str, bool] = {}
+
+
+def _newly_failed(results: list) -> list:
+    """Sources that were fine (or unseen) last run and are failing now."""
+    fresh = []
+    for r in results:
+        if not r.ok and _source_was_ok.get(r.title, True):
+            fresh.append(r)
+        _source_was_ok[r.title] = r.ok
+    return fresh
+
+
 async def run_sync(app: Application) -> None:
+    """Pull the domain lists, then act on the statuses that came with them.
+
+    The platform's own status is the earliest signal we have -- a ban is in the
+    API while DNS and Safe Browsing are still quiet -- and reading it costs no
+    network call beyond this sync, so bans are reported here rather than waiting
+    for the hourly scan.
+    """
     log.info("job.sync.start")
     try:
         results = await app.sync_service.run()
@@ -38,8 +63,15 @@ async def run_sync(app: Application) -> None:
         return
     # Each source is isolated: one failing does not stop the others, but the group
     # should know which one is down.
-    if any(not r.ok for r in results):
-        await app.notifier.notify_text(render_sync_failure(results))
+    failed = _newly_failed(list(results))
+    if failed:
+        await app.notifier.notify_text(render_sync_failure(failed))
+
+    try:
+        for report in await scan_source_statuses():
+            await app.notifier.notify_scan(report)
+    except Exception:
+        log.exception("job.sync.status_error")
 
 
 async def run_scan(app: Application) -> None:

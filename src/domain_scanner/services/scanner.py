@@ -172,3 +172,71 @@ async def collect_monitored_domain_ids() -> list[int]:
     """Every domain that gets checked: still in its source and not muted by hand."""
     async with session_scope() as session:
         return await DomainRepository(session).monitored_ids()
+
+
+async def scan_source_statuses() -> list[ScanReport]:
+    """Turn freshly synced platform statuses into verdicts, with no network calls.
+
+    A ban shows up in the platform long before DNS or Safe Browsing notice it, and
+    the status is already in the database after a sync -- so this runs as often as
+    the sync does, instead of waiting for the hourly scan.
+
+    It only ever raises a verdict. A domain that is fine in the platform says
+    nothing about the blocklists, so a status pass must not undo what a real scan
+    found; it writes a scan (and alerts) only for domains the status makes worse.
+    """
+    reports: list[ScanReport] = []
+    async with session_scope() as session:
+        domains = await DomainRepository(session).monitored()
+        pending = [
+            (d.id, outcome)
+            for d in domains
+            if (outcome := check_source_status(d.source, d.external_status)) is not None
+            and outcome.verdict.severity > d.current_verdict.severity
+        ]
+
+    for domain_id, outcome in pending:
+        now = datetime.now(UTC)
+        async with session_scope() as session:
+            # Same lock as a full scan: the hourly run may be scanning this very
+            # domain, and only one of the two should report the change.
+            domain = await session.get(Domain, domain_id, with_for_update=True)
+            if domain is None or outcome.verdict.severity <= domain.current_verdict.severity:
+                continue
+            previous = domain.current_verdict
+            session.add(
+                Scan(
+                    domain_id=domain_id,
+                    verdict=outcome.verdict,
+                    previous_verdict=previous,
+                    changed=True,
+                    started_at=now,
+                    finished_at=now,
+                    checks=[
+                        ScanCheck(
+                            checker=outcome.checker,
+                            verdict=outcome.verdict,
+                            summary=outcome.summary,
+                            raw=outcome.raw or None,
+                            created_at=now,
+                        )
+                    ],
+                )
+            )
+            domain.current_verdict = outcome.verdict
+            reports.append(
+                ScanReport(
+                    domain=domain.name,
+                    verdict=outcome.verdict,
+                    previous_verdict=previous,
+                    changed=True,
+                    outcomes=[outcome],
+                    domain_id=domain_id,
+                    source=domain.source,
+                    owner=domain.owner,
+                    finished_at=now,
+                )
+            )
+    if reports:
+        log.info("scan.statuses", changed=len(reports))
+    return reports

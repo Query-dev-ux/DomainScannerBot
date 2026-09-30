@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     postgres_password: str = "change-me"
 
     # Scheduler
-    sync_interval_minutes: int = 60
+    sync_interval_minutes: int = 10
     # Every monitored domain is checked once per this interval.
     scan_interval_minutes: int = 60
     scan_concurrency: int = 5
