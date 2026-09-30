@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from domain_scanner.checkers.base import CheckOutcome
 from domain_scanner.checkers.facebook import FacebookUrlChecker, classify
 from domain_scanner.db.models import Verdict
@@ -23,9 +25,10 @@ def test_scraped_page_is_clean():
 
 def test_bare_id_echo_is_not_clean():
     # Graph echoes the URL with nothing else when Facebook has no page for it.
-    # Treating that as "clean" was the bug scrape=true fixes.
+    # Calling that "clean" was the bug scrape=true fixes -- but it is not a
+    # verdict against the domain either, only the absence of one.
     outcome = classify(200, {"id": "https://example.com/"})
-    assert outcome.verdict is Verdict.SUSPICIOUS
+    assert outcome.verdict is Verdict.ERROR
 
 
 def test_community_standards_block_is_flagged():
@@ -46,9 +49,9 @@ def test_block_marker_matched_in_user_message():
     assert classify(400, payload).verdict is Verdict.FLAGGED
 
 
-def test_unfetchable_page_is_suspicious():
+def test_unfetchable_page_is_not_a_verdict():
     outcome = classify(400, _err("Error parsing input URL, no data was scraped", code=1609005))
-    assert outcome.verdict is Verdict.SUSPICIOUS
+    assert outcome.verdict is Verdict.ERROR
 
 
 def test_transient_error_is_error_not_alert():
@@ -87,13 +90,32 @@ def test_scraped_page_with_title_is_clean():
     assert "Chrono Shards" in (outcome.summary or "")
 
 
-def test_page_facebook_could_not_read_is_suspicious():
-    # What a domain that no longer resolves returns: no title, no description.
+def test_page_facebook_could_not_read_is_not_a_verdict():
+    # Also what a cloaked lander returns: the crawler is shown an empty page on
+    # purpose. Reporting that as "под подозрением" flagged every working cloak,
+    # and a domain that stopped resolving is DNS's business anyway.
     payload = {"url": "https://gone.com/", "type": "website", "updated_time": "2026-09-24T10:03Z"}
     outcome = classify(200, payload)
-    assert outcome.verdict is Verdict.SUSPICIOUS
-    assert outcome.summary == "FB не смог прочитать страницу"
+    assert outcome.verdict is Verdict.ERROR
+    assert outcome.error == "FB не смог прочитать страницу"
     assert outcome.raw == payload
+
+
+def test_the_checker_only_ever_accuses_on_an_explicit_block():
+    # The whole rule in one place: clean, flagged, or nothing learned.
+    import domain_scanner.checkers.facebook as fb
+
+    payloads = [
+        {"id": "https://a.com/"},
+        {"url": "https://a.com/", "title": "A"},
+        _err("Service temporarily unavailable", code=2, is_transient=True),
+        _err("Error parsing input URL, no data was scraped", code=1609005),
+        _err("This link goes against our Community Standards"),
+        _err("Rate limit exceeded", code=4),
+    ]
+    verdicts = {classify(200, p).verdict for p in payloads}
+    assert Verdict.SUSPICIOUS not in verdicts
+    assert "SUSPICIOUS" not in Path(fb.__file__).read_text(encoding="utf-8")
 
 
 def test_description_or_image_alone_counts_as_read():

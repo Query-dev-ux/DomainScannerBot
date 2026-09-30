@@ -15,7 +15,7 @@ from aiogram.types import InlineKeyboardMarkup, LinkPreviewOptions
 from domain_scanner.bot.keyboards import domain_keyboard
 from domain_scanner.bot.render import render_report
 from domain_scanner.logging import get_logger
-from domain_scanner.services.scanner import ScanReport
+from domain_scanner.services.scanner import ScanReport, mark_alert_sent
 
 log = get_logger(__name__)
 
@@ -57,7 +57,7 @@ class Notifier:
         text: str,
         markup: InlineKeyboardMarkup | None = None,
         chat_id: int | None = None,
-    ) -> None:
+    ) -> bool:
         target = self.chat_id if chat_id is None else chat_id
         for attempt in range(len(SEND_BACKOFF) + 1):
             try:
@@ -70,7 +70,7 @@ class Notifier:
                     link_preview_options=LinkPreviewOptions(is_disabled=True),
                     reply_markup=markup,
                 )
-                return
+                return True
             except TelegramRetryAfter as exc:
                 # Flood control names its own pause; anything else is our backoff.
                 delay = min(exc.retry_after, MAX_RETRY_AFTER)
@@ -82,12 +82,13 @@ class Notifier:
                 # A chat we were removed from, a bad id, malformed HTML — retrying
                 # changes nothing, so say so once and stop.
                 log.exception("notifier.send_failed", chat_id=target)
-                return
+                return False
             if attempt == len(SEND_BACKOFF):
                 log.error("notifier.send_gave_up", chat_id=target, reason=reason)
-                return
+                return False
             log.warning("notifier.send_retry", chat_id=target, reason=reason, wait=delay)
             await asyncio.sleep(delay)
+        return False
 
     async def _route_for(self, report: ScanReport) -> int | None:
         if self._route_lookup is None:
@@ -103,9 +104,16 @@ class Notifier:
         markup = domain_keyboard(report.domain_id) if report.domain_id else None
         text = render_report(report, alert=True)
         owners_chat = await self._route_for(report)
+        delivered = False
         if owners_chat is not None and owners_chat != self.chat_id:
-            await self._send(text, markup, owners_chat)
-        await self._send(text, markup)
+            delivered = await self._send(text, markup, owners_chat)
+        delivered = await self._send(text, markup) or delivered
+        if delivered and report.scan_id is not None:
+            try:
+                await mark_alert_sent(report.scan_id)
+            except Exception:
+                # Bookkeeping: the group has the alert either way.
+                log.exception("notifier.mark_failed", scan_id=report.scan_id)
 
     async def notify_text(self, text: str) -> None:
         await self._send(text)

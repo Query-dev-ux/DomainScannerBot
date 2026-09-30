@@ -60,6 +60,7 @@ class ScanReport:
     changed: bool
     outcomes: list[CheckOutcome] = field(default_factory=list)
     domain_id: int | None = None
+    scan_id: int | None = None
     source: DomainSource | None = None
     owner: str | None = None
     finished_at: datetime | None = None
@@ -176,6 +177,7 @@ class ScannerService:
                 ],
             )
             session.add(scan)
+            await session.flush()
             domain.current_verdict = verdict
             domain.last_scanned_at = finished
 
@@ -186,6 +188,7 @@ class ScannerService:
             changed=changed,
             outcomes=outcomes,
             domain_id=domain_id,
+            scan_id=scan.id,
             source=source,
             owner=owner,
             finished_at=finished,
@@ -251,25 +254,25 @@ async def scan_source_statuses() -> list[ScanReport]:
             if domain is None or outcome.verdict.severity <= domain.current_verdict.severity:
                 continue
             previous = domain.current_verdict
-            session.add(
-                Scan(
-                    domain_id=domain_id,
-                    verdict=outcome.verdict,
-                    previous_verdict=previous,
-                    changed=True,
-                    started_at=now,
-                    finished_at=now,
-                    checks=[
-                        ScanCheck(
-                            checker=outcome.checker,
-                            verdict=outcome.verdict,
-                            summary=outcome.summary,
-                            raw=outcome.raw or None,
-                            created_at=now,
-                        )
-                    ],
-                )
+            scan = Scan(
+                domain_id=domain_id,
+                verdict=outcome.verdict,
+                previous_verdict=previous,
+                changed=True,
+                started_at=now,
+                finished_at=now,
+                checks=[
+                    ScanCheck(
+                        checker=outcome.checker,
+                        verdict=outcome.verdict,
+                        summary=outcome.summary,
+                        raw=outcome.raw or None,
+                        created_at=now,
+                    )
+                ],
             )
+            session.add(scan)
+            await session.flush()
             domain.current_verdict = outcome.verdict
             reports.append(
                 ScanReport(
@@ -279,6 +282,7 @@ async def scan_source_statuses() -> list[ScanReport]:
                     changed=True,
                     outcomes=[outcome],
                     domain_id=domain_id,
+                    scan_id=scan.id,
                     source=domain.source,
                     owner=domain.owner,
                     finished_at=now,
@@ -287,3 +291,15 @@ async def scan_source_statuses() -> list[ScanReport]:
     if reports:
         log.info("scan.statuses", changed=len(reports))
     return reports
+
+
+async def mark_alert_sent(scan_id: int) -> None:
+    """Record that the group actually heard about this scan.
+
+    Written after delivery, not before: `scans.alert_sent` used to stay false on
+    every row, which made it useless for answering "did anyone get told?"
+    """
+    async with session_scope() as session:
+        scan = await session.get(Scan, scan_id)
+        if scan is not None:
+            scan.alert_sent = True

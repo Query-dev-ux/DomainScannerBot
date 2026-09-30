@@ -42,8 +42,9 @@ _BLOCKED_MARKERS = (
     "circumvent",
 )
 
-# Substrings that mean FB's crawler could not read the page. Not a ban, but for a
-# landing page it still means the link will render badly (or the cloak misfired).
+# Substrings that mean FB's crawler could not read the page. That is not a
+# verdict: our landers are cloaked, so a crawler shown nothing is the cloak
+# doing its job. Only an explicit block marker says the domain is bad.
 _UNFETCHABLE_MARKERS = (
     "no data was scraped",
     "error parsing input url",
@@ -64,6 +65,12 @@ def _error_text(error: dict[str, Any]) -> str:
 
 def classify(status: int, payload: dict[str, Any]) -> CheckOutcome:
     """Map a Graph API URL-node response onto a verdict.
+
+    Only two answers say anything about the domain: Facebook read the page
+    (clean), or Facebook refused the link (flagged). Everything else — including
+    a page its crawler could not read — is "не проверен": our landers are
+    cloaked, so an empty page is the normal answer for a healthy domain and
+    calling it suspicious only reported working cloaks.
 
     Pure function — no network — so the classification rules stay unit-testable.
     The full payload is always kept in `raw` so unfamiliar responses can be
@@ -95,8 +102,8 @@ def classify(status: int, payload: dict[str, Any]) -> CheckOutcome:
         if "url" in payload or "id" in payload:
             return CheckOutcome(
                 checker=NAME,
-                verdict=Verdict.SUSPICIOUS,
-                summary="FB не смог прочитать страницу",
+                verdict=Verdict.ERROR,
+                error="FB не смог прочитать страницу",
                 raw=payload,
             )
         return CheckOutcome(
@@ -139,8 +146,8 @@ def classify(status: int, payload: dict[str, Any]) -> CheckOutcome:
     if any(marker in text for marker in _UNFETCHABLE_MARKERS):
         return CheckOutcome(
             checker=NAME,
-            verdict=Verdict.SUSPICIOUS,
-            summary=f"краулер FB не смог прочитать страницу: {error.get('message', '')}",
+            verdict=Verdict.ERROR,
+            error=f"краулер FB не смог прочитать страницу: {error.get('message', '')}",
             raw=payload,
         )
 
