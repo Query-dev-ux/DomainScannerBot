@@ -4,7 +4,9 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from domain_scanner.checkers.base import Checker, CheckOutcome
+from sqlalchemy import select
+
+from domain_scanner.checkers.base import BatchChecker, Checker, CheckOutcome
 from domain_scanner.checkers.source_status import (
     NOT_LIVE_SUMMARY,
     check_source_status,
@@ -76,7 +78,13 @@ class ScannerService:
         self.checkers = checkers
         self._semaphore = asyncio.Semaphore(concurrency)
 
-    async def _run_checkers(self, domain: str) -> list[CheckOutcome]:
+    async def _run_checkers(
+        self, domain: str, ready: dict[str, CheckOutcome] | None = None
+    ) -> list[CheckOutcome]:
+        """Run the checkers, minus the ones a batch pass has already answered."""
+        ready = ready or {}
+        todo = [c for c in self.checkers if c.name not in ready]
+
         async def _one(checker: Checker) -> CheckOutcome:
             try:
                 return await checker.check(domain)
@@ -84,13 +92,41 @@ class ScannerService:
                 log.exception("checker.crashed", checker=checker.name, domain=domain)
                 return CheckOutcome.failure(checker.name, f"{type(exc).__name__}: {exc}")
 
-        return await asyncio.gather(*(_one(c) for c in self.checkers))
+        fresh = await asyncio.gather(*(_one(c) for c in todo))
+        # Keep the checkers in their configured order whichever way they ran.
+        by_name = {**ready, **{o.checker: o for o in fresh}}
+        return [by_name[c.name] for c in self.checkers if c.name in by_name]
 
-    async def scan_domain(self, domain_id: int) -> ScanReport | None:
+    async def _batch_outcomes(self, names: list[str]) -> dict[str, dict[str, CheckOutcome]]:
+        """Ask every batch checker about the whole list, once.
+
+        Safe Browsing allows 125 domains per request, so a full scan costs a few
+        requests instead of one per domain. A checker that fails here hands back
+        an error for its domains, exactly as it would one at a time.
+        """
+        ready: dict[str, dict[str, CheckOutcome]] = {}
+        for checker in self.checkers:
+            if not isinstance(checker, BatchChecker):
+                continue
+            try:
+                outcomes = await checker.check_many(names)
+            except Exception as exc:
+                log.exception("checker.batch_crashed", checker=checker.name)
+                message = f"{type(exc).__name__}: {exc}"
+                outcomes = {n: CheckOutcome.failure(checker.name, message) for n in names}
+            for name, outcome in outcomes.items():
+                ready.setdefault(name, {})[checker.name] = outcome
+        return ready
+
+    async def scan_domain(
+        self, domain_id: int, ready: dict[str, CheckOutcome] | None = None
+    ) -> ScanReport | None:
         async with self._semaphore:
-            return await self._scan_domain(domain_id)
+            return await self._scan_domain(domain_id, ready)
 
-    async def _scan_domain(self, domain_id: int) -> ScanReport | None:
+    async def _scan_domain(
+        self, domain_id: int, ready: dict[str, CheckOutcome] | None = None
+    ) -> ScanReport | None:
         async with session_scope() as session:
             domain = await session.get(Domain, domain_id)
             if domain is None:
@@ -102,7 +138,7 @@ class ScannerService:
             started = datetime.now(UTC)
 
         outcomes = excuse_missing_dns(
-            await self._run_checkers(name), source, external_status
+            await self._run_checkers(name, ready), source, external_status
         )
         # What the platform says comes first: it knows about a ban before DNS does.
         from_source = check_source_status(source, external_status)
@@ -164,7 +200,18 @@ class ScannerService:
         return report
 
     async def scan_many(self, domain_ids: list[int]) -> list[ScanReport]:
-        results = await asyncio.gather(*(self.scan_domain(i) for i in domain_ids))
+        async with session_scope() as session:
+            rows = await session.execute(
+                select(Domain.id, Domain.name).where(Domain.id.in_(domain_ids))
+            )
+            names = dict(rows.all())
+        ready = await self._batch_outcomes(sorted(set(names.values())))
+        results = await asyncio.gather(
+            *(
+                self.scan_domain(i, ready.get(names.get(i, ""), {}))
+                for i in domain_ids
+            )
+        )
         return [r for r in results if r is not None]
 
 

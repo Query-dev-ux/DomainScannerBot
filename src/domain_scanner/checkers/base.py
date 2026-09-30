@@ -24,3 +24,20 @@ class Checker(Protocol):
     name: str
 
     async def check(self, domain: str) -> CheckOutcome: ...
+
+
+@runtime_checkable
+class BatchChecker(Protocol):
+    """A checker whose API judges many domains in one request.
+
+    A scan of the whole list calls `check_many` once instead of once per domain,
+    which is the difference between staying inside a daily API quota and running
+    out of it (see GoogleSafeBrowsingChecker). Every batch checker also answers
+    `check` for a single domain, for /check and the recheck button.
+    """
+
+    name: str
+
+    async def check(self, domain: str) -> CheckOutcome: ...
+
+    async def check_many(self, domains: list[str]) -> dict[str, CheckOutcome]: ...

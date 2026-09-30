@@ -4,6 +4,7 @@ from domain_scanner.checkers.base import CheckOutcome
 from domain_scanner.checkers.source_status import NOT_LIVE_SUMMARY
 from domain_scanner.db.models import DomainSource, Verdict
 from domain_scanner.services.scanner import (
+    ScannerService,
     ScanReport,
     aggregate_verdict,
     excuse_missing_dns,
@@ -82,3 +83,78 @@ def test_the_excuse_touches_nothing_else():
     listed = CheckOutcome(checker="dns_rbl", verdict=Verdict.FLAGGED, raw={"listed": {}})
     others = [listed, _out(Verdict.SUSPICIOUS)]
     assert excuse_missing_dns(others, DomainSource.PWA, "5") == others
+
+
+# ── пакетные проверки ────────────────────────────────────────────────────────
+
+
+class FakeDns:
+    name = "dns_rbl"
+
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+
+    async def check(self, domain: str) -> CheckOutcome:
+        self.asked.append(domain)
+        return CheckOutcome(checker=self.name, verdict=Verdict.CLEAN)
+
+
+class FakeBatch:
+    name = "google_safe_browsing"
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.batches: list[list[str]] = []
+        self.singles: list[str] = []
+        self._error = error
+
+    async def check(self, domain: str) -> CheckOutcome:
+        self.singles.append(domain)
+        return CheckOutcome(checker=self.name, verdict=Verdict.CLEAN)
+
+    async def check_many(self, domains: list[str]) -> dict[str, CheckOutcome]:
+        self.batches.append(list(domains))
+        if self._error is not None:
+            raise self._error
+        return {
+            d: CheckOutcome(
+                checker=self.name,
+                verdict=Verdict.FLAGGED if d.startswith("bad") else Verdict.CLEAN,
+            )
+            for d in domains
+        }
+
+
+async def test_a_batch_checker_is_asked_once_for_the_whole_list():
+    batch = FakeBatch()
+    service = ScannerService([FakeDns(), batch])
+
+    ready = await service._batch_outcomes(["a.com", "bad.com"])
+
+    assert batch.batches == [["a.com", "bad.com"]]
+    assert ready["bad.com"]["google_safe_browsing"].verdict is Verdict.FLAGGED
+    assert ready["a.com"]["google_safe_browsing"].verdict is Verdict.CLEAN
+
+
+async def test_a_domain_is_not_asked_again_about_what_the_batch_answered():
+    dns, batch = FakeDns(), FakeBatch()
+    service = ScannerService([dns, batch])
+
+    ready = await service._batch_outcomes(["a.com"])
+    outcomes = await service._run_checkers("a.com", ready["a.com"])
+
+    assert batch.singles == []  # the whole point: one request, not one per domain
+    assert dns.asked == ["a.com"]
+    # Order follows the configured checkers, not who answered first.
+    assert [o.checker for o in outcomes] == ["dns_rbl", "google_safe_browsing"]
+
+
+async def test_a_batch_that_blows_up_costs_only_its_own_verdicts():
+    batch = FakeBatch(error=RuntimeError("HTTP 429"))
+    service = ScannerService([FakeDns(), batch])
+
+    ready = await service._batch_outcomes(["a.com", "b.com"])
+
+    assert all(r["google_safe_browsing"].verdict is Verdict.ERROR for r in ready.values())
+    # An errored check never decides a verdict on its own.
+    outcomes = await service._run_checkers("a.com", ready["a.com"])
+    assert aggregate_verdict(outcomes) is Verdict.CLEAN

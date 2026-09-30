@@ -88,7 +88,7 @@ SkakApp ──────┘              │
 |---|---|---|
 | `source_status` | не нужен | статус домена в платформе: бан в PWApartners (`status 9`) или в SkakApp (`is_baned_register`) → `зашкварен`; просроченный в PWApartners → `подозрительно` |
 | `dns_rbl` | не нужен | резолв домена + Spamhaus DBL / SURBL |
-| `google_safe_browsing` | `GSB_API_KEY` | malware / phishing / unwanted software |
+| `google_safe_browsing` | `GSB_API_KEY` | malware / phishing / unwanted software. При полном прогоне спрашивается о доменах пачками по 125 — не больше полудесятка запросов на прогон вместо одного на домен, иначе суточная квота (10 000) заканчивается до конца суток |
 | `facebook` | `FB_APP_ID` + `FB_APP_SECRET` | блокировка ссылки внутри Facebook. Не больше `FB_HOURLY_LIMIT` доменов в час: каждая проверка заставляет FB сходить на страницу, и Graph API это жёстко лимитирует |
 
 ### Как работает проверка Facebook
@@ -112,6 +112,10 @@ app access token (`{app_id}|{app_secret}`), логин пользователя 
 Полный ответ Graph API всегда сохраняется в `scan_checks.raw` — по накопленным данным
 списки маркеров в [checkers/facebook.py](src/domain_scanner/checkers/facebook.py)
 можно уточнять. Незнакомые ошибки пишутся в лог как `facebook.unknown_error`.
+
+Если API умеет судить о многих доменах за один запрос, checker добавляет к `check` ещё и
+`check_many(domains) -> dict[domain, CheckOutcome]` (протокол `BatchChecker`). Перед полным
+прогоном такие проверки спрашиваются один раз на всю выборку, а `/check` по-прежнему идёт через `check`.
 
 Новый checker = класс с атрибутом `name` и методом `async def check(domain) -> CheckOutcome`,
 добавленный в `build_checkers()` (`src/domain_scanner/checkers/__init__.py`).
